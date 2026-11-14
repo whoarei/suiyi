@@ -228,9 +228,16 @@ public partial class PopupWindow : Window
         _notice = result.Message;
         _noticeIsError = result.Outcome != InsertionOutcome.Submitted;
         DiagnosticLog.Write("insertion", result.Outcome.ToString(), target.ProcessName);
-        RefreshActions();
-        if (result.WasSubmitted) { _translation.Suspend(); Hide(); }
-        else if (!_disposed) { Show(); Activate(); DraftText.Focus(); }
+        if (result.Outcome == InsertionOutcome.Submitted)
+        {
+            _translation.Suspend();
+            // Clearing the source also cancels old responses and clears the result.
+            DraftText.Clear();
+            SetNotice(null);
+            Hide();
+        }
+        else if (result.WasSubmitted) { RefreshActions(); _translation.Suspend(); Hide(); }
+        else if (!_disposed) { RefreshActions(); Show(); Activate(); DraftText.Focus(); }
     }
 
     private void HideDraft()
