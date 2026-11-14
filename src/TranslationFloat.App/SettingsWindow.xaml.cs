@@ -22,7 +22,7 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         _store = store; _client = client; _current = current;
         ModelBox.SelectedIndex = current.Model == "deepseek-v4-pro" ? 1 : 0;
-        KeyHint.Text = current.IsConfigured ? "已有密钥。留空会保留当前密钥；填写新密钥可替换。" : "请粘贴 DeepSeek 控制台创建的 API Key，不要发到聊天里。";
+        KeyHint.Text = current.IsConfigured ? "留空保留已有密钥。" : "密钥在本机加密保存。";
     }
 
     private string SelectedModel => (ModelBox.SelectedItem as ComboBoxItem)?.Content as string ?? DeepSeekTranslationProvider.DefaultModel;
@@ -42,13 +42,13 @@ public partial class SettingsWindow : Window
     private async void Test_Click(object sender, RoutedEventArgs e)
     {
         TestButton.IsEnabled = SaveButton.IsEnabled = false;
-        ShowStatus("正在用固定测试句连接 DeepSeek…", false);
+        ShowStatus("正在连接…", false);
         try
         {
             var key = string.IsNullOrWhiteSpace(ApiKeyBox.Password) ? _current.ApiKey : ApiKeyBox.Password.Trim();
             var provider = new DeepSeekTranslationProvider(_client, key, SelectedModel);
-            var translation = await provider.TranslateAsync(new("你好，世界。"), _lifetime.Token);
-            if (!_lifetime.IsCancellationRequested) ShowStatus("连接成功：" + translation, false);
+            await provider.TranslateAsync(new("你好，世界。"), _lifetime.Token);
+            if (!_lifetime.IsCancellationRequested) ShowStatus("连接成功", false);
         }
         catch (OperationCanceledException) { }
         catch (TranslationException error) { ShowStatus(error.Message, true); }
@@ -57,7 +57,8 @@ public partial class SettingsWindow : Window
     }
 
     private void ShowStatus(string message, bool error)
-    { TestStatus.Text = message; TestStatus.Foreground = new SolidColorBrush(error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(52, 104, 73)); }
-    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+    { TestStatus.Text = message; TestStatus.Visibility = Visibility.Visible; TestStatus.Foreground = new SolidColorBrush(error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(52, 104, 73)); }
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    { if (e.Key == System.Windows.Input.Key.Escape && !ModelBox.IsDropDownOpen) { e.Handled = true; Close(); } }
     private void Window_Closed(object? sender, EventArgs e) { _lifetime.Cancel(); ApiKeyBox.Clear(); }
 }

@@ -25,6 +25,9 @@ public partial class PopupWindow : Window
     private TargetSession? _target;
     private HwndSource? _source;
     private nint _handle;
+    private string? _notice;
+    private bool _noticeIsError;
+    private string _targetHint = "";
     private bool _busy, _sourceComposing, _resultComposing, _disposed, _hotKeyRegistered, _rendering, _openingSettings, _capturing;
     private bool IsComposing => _sourceComposing || _resultComposing;
 
@@ -109,7 +112,7 @@ public partial class PopupWindow : Window
         _source = HwndSource.FromHwnd(_handle);
         _source?.AddHook(WindowProc);
         _hotKeyRegistered = NativeMethods.RegisterHotKey(_handle, HotKeyId, 0x4000 | 0x0002 | 0x0001, 0x54);
-        if (!_hotKeyRegistered) StatusText.Text = "Ctrl+Alt+T 已被占用。请关闭冲突程序后重新启动浮窗。";
+        if (!_hotKeyRegistered) SetNotice("Ctrl+Alt+T 已被占用，请关闭冲突程序后重启。", true);
         DiagnosticLog.Write("started", _hotKeyRegistered ? "hotkey-registered" : "hotkey-unavailable");
     }
 
@@ -134,7 +137,9 @@ public partial class PopupWindow : Window
             if (_disposed) return;
             _target = capture.Target;
             DiagnosticLog.Write("capture-result", capture.Target is null ? "copy-mode" : "bound");
-            StatusText.Text = capture.Message;
+            _targetHint = capture.Message;
+            _notice = capture.Target is null ? capture.Message : null;
+            _noticeIsError = capture.Target is null;
             RefreshActions();
             OpenPopup();
         }
@@ -145,9 +150,9 @@ public partial class PopupWindow : Window
     {
         if (_busy || _capturing) return;
         _target = null;
-        StatusText.Text = _hotKeyRegistered
-            ? "请在目标输入框按 Ctrl+Alt+T，绑定原输入位置。"
-            : "Ctrl+Alt+T 已被占用；仍可复制文字。关闭冲突程序后重启。";
+        _notice = _hotKeyRegistered ? null : "Ctrl+Alt+T 已被占用，请关闭冲突程序后重启。";
+        _noticeIsError = !_hotKeyRegistered;
+        _targetHint = "在目标输入框按 Ctrl+Alt+T 唤出，可回填译文。";
         RefreshActions();
         OpenPopup();
     }
@@ -156,7 +161,8 @@ public partial class PopupWindow : Window
     {
         if (!IsVisible)
         {
-            var position = _platform.GetPopupPosition(450, 640);
+            Measure(new Size(Width, double.PositiveInfinity));
+            var position = _platform.GetPopupPosition(Width, DesiredSize.Height > 0 ? DesiredSize.Height : 280);
             Left = position.X; Top = position.Y;
             Show();
         }
@@ -169,24 +175,43 @@ public partial class PopupWindow : Window
 
     private void RefreshActions()
     {
-        if (InsertButton is null || _translation is null) return;
+        if (PrimaryButton is null || _translation is null) return;
         var state = _translation.State;
         _rendering = true;
-        try { if (!_resultComposing && TranslationText.Text != state.Result) TranslationText.Text = state.Result; }
+        try
+        {
+            var visibleResult = state.CanEdit ? state.Result : "";
+            if (!_resultComposing && TranslationText.Text != visibleResult) TranslationText.Text = visibleResult;
+        }
         finally { _rendering = false; }
-        TranslationStatusText.Text = state.Message;
-        TranslationStatusText.Foreground = new SolidColorBrush(state.Phase == TranslationPhase.Error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(94, 117, 102));
         TranslationText.IsReadOnly = _busy || !state.CanEdit;
-        TranslationText.Opacity = state.CanEdit || string.IsNullOrEmpty(state.Result) ? 1 : 0.5;
+        DraftPlaceholder.Visibility = string.IsNullOrEmpty(DraftText.Text) ? Visibility.Visible : Visibility.Collapsed;
+        ResultPlaceholder.Text = state.Phase switch
+        {
+            TranslationPhase.Waiting => "等待翻译…",
+            TranslationPhase.Translating => "翻译中…",
+            TranslationPhase.Composing => "选词中…",
+            TranslationPhase.Error => "翻译未完成",
+            _ => "译文"
+        };
+        ResultPlaceholder.Visibility = string.IsNullOrEmpty(TranslationText.Text) ? Visibility.Visible : Visibility.Collapsed;
+        var needsConfiguration = !_configuration.IsConfigured;
+        var feedback = state.Phase == TranslationPhase.Error ? state.Message : _notice ?? (needsConfiguration ? "请先设置 DeepSeek。" : null);
+        FeedbackText.Text = feedback ?? "";
+        FeedbackText.Foreground = new SolidColorBrush(_noticeIsError || state.Phase == TranslationPhase.Error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(94, 117, 102));
+        FeedbackPanel.Visibility = string.IsNullOrEmpty(feedback) ? Visibility.Collapsed : Visibility.Visible;
         RetryButton.Visibility = state.Phase == TranslationPhase.Error ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.IsEnabled = !_busy && !IsComposing;
-        InsertButton.IsEnabled = !_busy && !IsComposing && state.CanOutput && _target is not null;
+        ConfigureButton.Visibility = needsConfiguration ? Visibility.Visible : Visibility.Collapsed;
+        ConfigureButton.IsEnabled = !_busy;
+        PrimaryButton.IsEnabled = !_busy && !IsComposing && state.CanOutput;
         CopyButton.IsEnabled = !_busy && !IsComposing && state.CanOutput;
-        SettingsButton.IsEnabled = !_busy;
-        ProviderText.Text = _configuration.IsConfigured ? "DeepSeek · " + _configuration.Model : "DeepSeek · 未配置";
+        CopyButton.Visibility = _target is null ? Visibility.Collapsed : Visibility.Visible;
         DraftText.IsReadOnly = _busy;
-        TargetText.Text = _target is null ? "复制模式 · 尚未绑定输入位置" : "回填到 " + _target.DisplayName + " · 原输入位置";
-        InsertButton.Content = "填入原输入框  Ctrl ↵";
+        TargetText.Text = _target?.DisplayName ?? "";
+        TargetText.ToolTip = _targetHint;
+        PrimaryButton.Content = _busy ? "…" : _target is null ? "复制" : "填入";
+        PrimaryButton.ToolTip = _target is null ? "复制译文 · Ctrl+Enter" : "填入 " + _target.DisplayName + " · Ctrl+Enter\n" + _targetHint;
     }
 
     private async Task InsertAsync()
@@ -196,11 +221,12 @@ public partial class PopupWindow : Window
         var target = _target;
         var text = _translation.State.Result;
         RefreshActions();
-        StatusText.Text = "正在恢复原输入位置…";
+        SetNotice("正在回填…");
         var result = await _insertion.InsertAsync(target, text, _lifetime.Token);
         _target = null;
         _busy = false;
-        StatusText.Text = result.Message;
+        _notice = result.Message;
+        _noticeIsError = result.Outcome != InsertionOutcome.Submitted;
         DiagnosticLog.Write("insertion", result.Outcome.ToString(), target.ProcessName);
         RefreshActions();
         if (result.WasSubmitted) { _translation.Suspend(); Hide(); }
@@ -217,19 +243,29 @@ public partial class PopupWindow : Window
         Hide();
     }
 
-    private async void Insert_Click(object sender, RoutedEventArgs e) => await InsertAsync();
-    private async void Copy_Click(object sender, RoutedEventArgs e)
+    private void SetNotice(string? message, bool error = false)
+    { _notice = message; _noticeIsError = error; RefreshActions(); }
+
+    private Task ExecutePrimaryAsync() => _target is null ? CopyAsync() : InsertAsync();
+    private async void Primary_Click(object sender, RoutedEventArgs e) => await ExecutePrimaryAsync();
+    private async void Copy_Click(object sender, RoutedEventArgs e) => await CopyAsync();
+    private async Task CopyAsync()
     {
-        if (IsComposing || _translation?.State.CanOutput != true) return;
-        try { await _platform.WriteClipboardAsync(_translation.State.Result, _lifetime.Token); StatusText.Text = "已复制译文，可以手动粘贴。"; }
-        catch (Exception) { StatusText.Text = "剪贴板暂不可用，请稍后重试。"; }
+        if (_busy || IsComposing || _translation?.State.CanOutput != true) return;
+        try { await _platform.WriteClipboardAsync(_translation.State.Result, _lifetime.Token); SetNotice("已复制"); }
+        catch (Exception) { SetNotice("剪贴板暂不可用，请稍后重试。", true); }
     }
     private void Close_Click(object sender, RoutedEventArgs e) => HideDraft();
     private void Draft_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    { if (!_rendering) _translation?.UpdateSource(DraftText.Text); RefreshActions(); }
+    { if (!_rendering) { _notice = null; _noticeIsError = false; _translation?.UpdateSource(DraftText.Text); } RefreshActions(); }
     private void Translation_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    { if (!_rendering && !_resultComposing) _translation?.EditResult(TranslationText.Text); }
-    private void Retry_Click(object sender, RoutedEventArgs e) => _translation?.Retry();
+    {
+        if (_rendering) return;
+        _notice = null; _noticeIsError = false;
+        if (!_resultComposing) _translation?.EditResult(TranslationText.Text);
+        RefreshActions();
+    }
+    private void Retry_Click(object sender, RoutedEventArgs e) { _notice = null; _noticeIsError = false; _translation?.Retry(); }
     private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
     public void OpenSettings()
@@ -247,7 +283,7 @@ public partial class PopupWindow : Window
             {
                 ApplyConfiguration(saved);
                 DiagnosticLog.Write("settings", "saved");
-                StatusText.Text = "DeepSeek 设置已保存。请在目标输入框重新唤出以绑定目标。";
+                SetNotice(null);
             }
         }
         finally { _openingSettings = false; _translation?.Resume(); Activate(); DraftText.Focus(); }
@@ -260,7 +296,7 @@ public partial class PopupWindow : Window
         if (IsComposing || e.Key == Key.ImeProcessed) return;
         if (e.Key == Key.Escape) { e.Handled = true; HideDraft(); }
         else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
-        { e.Handled = true; await InsertAsync(); }
+        { e.Handled = true; await ExecutePrimaryAsync(); }
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)

@@ -30,13 +30,11 @@ public partial class App : Application
         MainWindow = _popup;
         _popup.InitializeHotKey();
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("打开浮窗（复制模式）", null, (_, _) => _popup.OpenWithoutTarget());
-        menu.Items.Add("DeepSeek 设置", null, (_, _) => _popup.OpenSettings());
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("打开随译", null, (_, _) => _popup.OpenWithoutTarget());
+        menu.Items.Add("设置", null, (_, _) => _popup.OpenSettings());
         _startupItem = new System.Windows.Forms.ToolStripMenuItem("开机启动");
         _startupItem.Click += (_, _) => ToggleStartup();
         menu.Items.Add(_startupItem);
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Shutdown());
         _trayIcon = LoadTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
