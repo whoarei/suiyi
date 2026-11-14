@@ -20,6 +20,8 @@ public partial class SettingsWindow : Window
     private readonly HttpClient _client;
     private readonly CancellationTokenSource _lifetime = new();
     private HotKeyBinding _hotKey;
+    private bool _keyVisible, _syncingKey, _closed;
+    private string? _revealedStoredKeyOrigin;
     internal TranslationConfiguration? Saved { get; private set; }
 
     internal SettingsWindow(TranslationSettingsStore store, HttpClient client, TranslationConfiguration current,
@@ -97,6 +99,18 @@ public partial class SettingsWindow : Window
 
     private void Address_Changed(object sender, TextChangedEventArgs e)
     {
+        if (_revealedStoredKeyOrigin is { } origin)
+        {
+            string? address = null;
+            try { address = OpenAiEndpoint.Normalize(AddressBox.Text); }
+            catch (ArgumentException) { }
+            if (address != origin)
+            {
+                _revealedStoredKeyOrigin = null;
+                ApiKeyBox.Clear();
+            }
+        }
+        SetKeyVisible(false);
         ClearStatus();
         if (ModelBox is not null)
         {
@@ -106,7 +120,62 @@ public partial class SettingsWindow : Window
         }
         UpdateKeyHint();
     }
-    private void ApiKey_Changed(object sender, RoutedEventArgs e) { ClearStatus(); UpdateKeyHint(); }
+    private void ApiKey_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_closed) return;
+        if (!_syncingKey)
+        {
+            if (_keyVisible)
+            {
+                _syncingKey = true;
+                try { VisibleApiKeyBox.Text = ApiKeyBox.Password; }
+                finally { _syncingKey = false; }
+            }
+        }
+        ClearStatus(); UpdateKeyHint();
+    }
+    private void VisibleKey_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingKey || _closed) return;
+        _syncingKey = true;
+        try { ApiKeyBox.Password = VisibleApiKeyBox.Text; }
+        finally { _syncingKey = false; }
+        ClearStatus(); UpdateKeyHint();
+    }
+    private void RevealKey_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_keyVisible && ApiKeyBox.Password.Length == 0)
+        {
+            try
+            {
+                var address = OpenAiEndpoint.Normalize(AddressBox.Text);
+                var key = _store.ResolveKey(address, "");
+                if (key.Length > 0)
+                {
+                    _syncingKey = true;
+                    try { ApiKeyBox.Password = key; }
+                    finally { _syncingKey = false; }
+                    _revealedStoredKeyOrigin = address;
+                }
+            }
+            catch (ArgumentException) { }
+        }
+        SetKeyVisible(!_keyVisible);
+    }
+    private void SetKeyVisible(bool visible)
+    {
+        if (VisibleApiKeyBox is null || RevealKeyButton is null) return;
+        _keyVisible = visible;
+        _syncingKey = true;
+        try { VisibleApiKeyBox.Text = visible ? ApiKeyBox.Password : ""; }
+        finally { _syncingKey = false; }
+        VisibleApiKeyBox.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        ApiKeyBox.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
+        EyeSlash.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var action = visible ? "隐藏密钥" : "显示密钥";
+        RevealKeyButton.ToolTip = action;
+        System.Windows.Automation.AutomationProperties.SetName(RevealKeyButton, action);
+    }
     private void Model_Changed(object sender, TextChangedEventArgs e) => ClearStatus();
     private void ClearStatus() { if (TestStatus is not null) TestStatus.Visibility = Visibility.Collapsed; }
     private void UpdateKeyHint()
@@ -146,5 +215,6 @@ public partial class SettingsWindow : Window
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     { if (e.Key == Key.Escape && !ModelBox.IsDropDownOpen) { e.Handled = true; Close(); } }
     private void Window_Closed(object? sender, EventArgs e)
-    { _lifetime.Cancel(); _recording(false); ApiKeyBox.Clear(); }
+    { _closed = true; _lifetime.Cancel(); _recording(false); SetKeyVisible(false); ApiKeyBox.Clear(); _revealedStoredKeyOrigin = null; }
+    private void Window_Deactivated(object? sender, EventArgs e) => SetKeyVisible(false);
 }

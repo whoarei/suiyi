@@ -4,7 +4,7 @@
         Title="随译 · 设置" Icon="Assets/Suiyi.ico" Width="392" SizeToContent="Height" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterOwner" FontFamily="Segoe UI, Microsoft YaHei"
-        Closed="Window_Closed" PreviewKeyDown="Window_PreviewKeyDown">
+        Closed="Window_Closed" Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown">
   <Window.Resources>
     <Style TargetType="TextBox">
       <Setter Property="Height" Value="34" /><Setter Property="Padding" Value="8,6" />
@@ -32,10 +32,21 @@
                  AutomationProperties.Name="API 地址" ToolTip="OpenAI 兼容 API 根地址，例如 https://example.com/v1" />
         <Label Grid.Row="1" Content="API Key" Target="{Binding ElementName=ApiKeyBox}" Margin="0,0,0,12" />
         <Grid Grid.Row="1" Grid.Column="1" Margin="0,0,0,12">
-          <PasswordBox x:Name="ApiKeyBox" Height="34" Padding="8,6" FontSize="12" BorderBrush="#DFE5E1" MaxLength="4096"
+          <PasswordBox x:Name="ApiKeyBox" Height="34" Padding="8,6,35,6" FontSize="12" BorderBrush="#DFE5E1" MaxLength="4096"
                        PasswordChanged="ApiKey_Changed" AutomationProperties.Name="API Key" ToolTip="本机加密保存；同一 API 地址下留空保留已有密钥。无鉴权接口可留空。" />
+          <TextBox x:Name="VisibleApiKeyBox" Visibility="Collapsed" Padding="8,6,35,6" MaxLength="4096" IsUndoEnabled="False"
+                   TextChanged="VisibleKey_Changed" AutomationProperties.Name="API Key 明文" />
           <TextBlock x:Name="KeyHint" Text="已保存 · 留空保留" Foreground="#94A098" FontSize="11" VerticalAlignment="Center"
-                     Margin="9,0" IsHitTestVisible="False" Visibility="Collapsed" />
+                     Margin="9,0,35,0" IsHitTestVisible="False" Visibility="Collapsed" />
+          <Button x:Name="RevealKeyButton" HorizontalAlignment="Right" Width="28" Height="28" Margin="0,0,3,0" Padding="0"
+                  Background="Transparent" BorderThickness="0" Click="RevealKey_Click" ToolTip="显示密钥" AutomationProperties.Name="显示密钥">
+            <Grid Width="16" Height="16">
+              <Path Data="M1,8 C4,2 12,2 15,8 C12,14 4,14 1,8 Z M10.5,8 A2.5,2.5 0 1 1 5.5,8 A2.5,2.5 0 1 1 10.5,8"
+                    Stroke="#718578" StrokeThickness="1.2" StrokeLineJoin="Round" />
+              <Path x:Name="EyeSlash" Data="M2,2 L14,14" Stroke="#718578" StrokeThickness="1.4" StrokeStartLineCap="Round"
+                    StrokeEndLineCap="Round" Visibility="Collapsed" />
+            </Grid>
+          </Button>
         </Grid>
         <Label Grid.Row="2" Content="模型" Target="{Binding ElementName=ModelBox}" Margin="0,0,0,12" />
         <Grid Grid.Row="2" Grid.Column="1" Margin="0,0,0,12">

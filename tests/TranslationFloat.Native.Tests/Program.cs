@@ -51,3 +51,4 @@ static void Check(bool condition, string message)
 // Private test registry branches only; never read or change the real login startup key.
 StartupChecks.Run();
 PreferenceChecks.Run();
+KeyVisibilityChecks.Run();
