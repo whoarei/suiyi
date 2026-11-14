@@ -11,6 +11,7 @@ public partial class App : Application
     private Mutex? _mutex;
     private System.Windows.Forms.NotifyIcon? _tray;
     private Icon? _trayIcon;
+    private TrayMenu? _trayMenu;
     private PopupWindow? _popup;
     private StartupRegistration? _startup;
     private System.Windows.Forms.ToolStripMenuItem? _startupItem;
@@ -36,20 +37,16 @@ public partial class App : Application
         catch (Exception error) { DiagnosticLog.Write("quick-mode-settings", error.GetType().Name); }
         MainWindow = _popup;
         _popup.InitializeHotKey();
-        var menu = new System.Windows.Forms.ContextMenuStrip();
-        var openItem = menu.Items.Add("打开随译", null, (_, _) => _popup.OpenWithoutTarget());
-        var settingsItem = menu.Items.Add("设置", null, (_, _) => _popup.OpenSettings());
-        _quickModeItem = new System.Windows.Forms.ToolStripMenuItem("快速模式")
-        {
-            Checked = _popup.QuickModeEnabled,
-            ToolTipText = "选中文字后按唤出快捷键，后台翻译并直接替换，不显示翻译浮窗。"
-        };
-        _quickModeItem.Click += (_, _) => ToggleQuickMode();
-        menu.Items.Add(_quickModeItem);
-        _startupItem = new System.Windows.Forms.ToolStripMenuItem("开机启动");
-        _startupItem.Click += (_, _) => ToggleStartup();
-        menu.Items.Add(_startupItem);
-        menu.Items.Add("退出", null, (_, _) => Shutdown());
+        var menu = _trayMenu = new TrayMenu();
+        var openItem = menu.AddAction("打开随译", TrayMenuGlyph.Open, (_, _) => _popup.OpenWithoutTarget());
+        var settingsItem = menu.AddAction("设置", TrayMenuGlyph.Settings, (_, _) => _popup.OpenSettings());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        _quickModeItem = menu.AddAction("快速模式", TrayMenuGlyph.Quick, (_, _) => ToggleQuickMode());
+        _quickModeItem.Checked = _popup.QuickModeEnabled;
+        _quickModeItem.ToolTipText = "选中文字后按唤出快捷键，后台翻译并直接替换，不显示翻译浮窗。";
+        _startupItem = menu.AddAction("开机启动", TrayMenuGlyph.Startup, (_, _) => ToggleStartup());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.AddAction("退出", TrayMenuGlyph.Exit, (_, _) => Shutdown());
         _trayIcon = LoadTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
         {
@@ -153,6 +150,7 @@ public partial class App : Application
         _popup?.ReleaseResources();
         _quickNotice?.Close();
         _tray?.Dispose();
+        _trayMenu?.Dispose();
         _trayIcon?.Dispose();
         _mutex?.Dispose();
         base.OnExit(e);
