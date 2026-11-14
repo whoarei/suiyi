@@ -6,7 +6,7 @@ namespace TranslationFloat.Core;
 
 public enum UpdateCheckState { Available, Current, Failed }
 
-public sealed record UpdateCheckResult(UpdateCheckState State, ReleaseVersion? Latest = null, Uri? ReleasePage = null, string? Error = null);
+public sealed record UpdateCheckResult(UpdateCheckState State, ReleaseVersion? Latest = null, Uri? ReleasePage = null, string? Error = null, ReleaseInstaller? Installer = null);
 
 // Uses a separate, anonymous client. Translation credentials never enter this request.
 public sealed class GitHubUpdateChecker(HttpClient client)
@@ -51,7 +51,8 @@ public sealed class GitHubUpdateChecker(HttpClient client)
 
             // Build the official repository URL instead of trusting a URL supplied in JSON.
             var page = new Uri("https://github.com/whoarei/suiyi/releases/tag/" + Uri.EscapeDataString(tag.GetString()!));
-            return new UpdateCheckResult(latest.CompareTo(current) > 0 ? UpdateCheckState.Available : UpdateCheckState.Current, latest, page);
+            return new UpdateCheckResult(latest.CompareTo(current) > 0 ? UpdateCheckState.Available : UpdateCheckState.Current,
+                latest, page, Installer: FindInstaller(root, latest, tag.GetString()!));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         { return Failed("检查更新超时，请检查网络后重试。"); }
@@ -62,4 +63,23 @@ public sealed class GitHubUpdateChecker(HttpClient client)
 
     private static UpdateCheckResult Failed(string message) => new(UpdateCheckState.Failed, Error: message);
     private static UpdateCheckResult InvalidResponse() => Failed("更新信息暂时不可用，请稍后重试。");
+
+    private static ReleaseInstaller? FindInstaller(JsonElement root, ReleaseVersion version, string tag)
+    {
+        if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (asset.ValueKind != JsonValueKind.Object
+                || !asset.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String
+                || name.GetString() != $"suiyi-{version}-windows-x64-setup.exe"
+                || !asset.TryGetProperty("state", out var state) || state.ValueKind != JsonValueKind.String || state.GetString() != "uploaded"
+                || !asset.TryGetProperty("size", out var size) || size.ValueKind != JsonValueKind.Number || !size.TryGetInt64(out var bytes)
+                || !asset.TryGetProperty("digest", out var digest) || digest.ValueKind != JsonValueKind.String) continue;
+            var hash = digest.GetString()!;
+            if (!hash.StartsWith("sha256:", StringComparison.Ordinal)) continue;
+            var candidate = new ReleaseInstaller(version.ToString(), tag, bytes, hash[7..]);
+            if (candidate.IsValid) return candidate;
+        }
+        return null;
+    }
 }

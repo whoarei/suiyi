@@ -1,4 +1,4 @@
-name: Windows portable release
+name: Windows release
 
 on:
   push:
@@ -50,17 +50,24 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Run checks and package portable app
+      - name: Run checks and package installer and portable app
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: ./scripts/package.ps1 -Version $env:PACKAGE_VERSION
 
-      - name: Upload portable artifacts
+      - name: Verify install, in-place upgrade and uninstall
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath artifacts -Directory -Filter 'package-*')
+          if ($packages.Count -ne 1) { throw 'Expected one clean package directory.' }
+          ./scripts/test-installer.ps1 -AppDirectory (Join-Path $packages[0].FullName 'Suiyi')
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-x64-portable
+          name: windows-x64
           path: |
             artifacts/release/*.zip
+            artifacts/release/*-setup.exe
             artifacts/release/*.sha256
           if-no-files-found: error
           compression-level: 0
@@ -75,17 +82,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download portable artifacts
+      - name: Download Windows artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-x64-portable
+          name: windows-x64
           path: release-assets
 
       - name: Verify archive checksum
         working-directory: release-assets
         run: sha256sum --check --strict *.sha256
 
-      - name: Create release and attach portable app
+      - name: Create release and attach installer and portable app
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -95,5 +102,5 @@ jobs:
           if [[ "$RELEASE_TAG" == *-* ]]; then
             options+=(--prerelease --latest=false)
           fi
-          gh release create "$RELEASE_TAG" release-assets/*.zip release-assets/*.sha256 \
+          gh release create "$RELEASE_TAG" release-assets/*.exe release-assets/*.zip release-assets/*.sha256 \
             --verify-tag --title "随译 $RELEASE_TAG" --generate-notes "${options[@]}"

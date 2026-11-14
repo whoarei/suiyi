@@ -17,7 +17,7 @@
 
 ## 运行
 
-运行 `artifacts\TranslationFloat\TranslationFloat.exe`，程序常驻托盘。
+推荐下载 [Release](https://github.com/whoarei/suiyi/releases) 中的 Windows x64 安装包 `suiyi-X.Y.Z-windows-x64-setup.exe`。默认安装到当前用户的 `%LOCALAPPDATA%\Programs\Suiyi`，无需管理员权限，提供开始菜单与卸载入口。便携包仍可解压运行，开发构建运行 `artifacts\TranslationFloat\TranslationFloat.exe`，程序常驻托盘。
 
 1. 首次使用，从托盘菜单打开“设置”，填写 API 地址、Key 和模型，点击“测试”后保存。模型可点击右侧下载图标获取后选择，也可手填；无鉴权的本地接口可留空 Key。
 2. 在准备填写的输入框中放好光标，按 `Ctrl+Alt+T`。
@@ -43,7 +43,9 @@
 
 托盘右键菜单采用圆角白底、浅绿悬停和线条图标，按操作分组。“快速模式”和“开机启动”以滑动开关显示当前状态；设置与退出入口保持在同一菜单中。
 
-托盘菜单中的“检查更新”会查询 GitHub 上最新的正式 Release，显示当前版本及检查结果。有新版时，点击“前往下载”打开该版本的官方发布页面，下载 Windows x64 便携包后退出随译并完整解压替换。检查失败可手动重试；关闭窗口会取消检查。此操作不使用翻译接口或 API Key，仅在主动点击时发起更新查询。
+托盘菜单中的“检查更新”会查询 GitHub 上最新的正式 Release。有新版安装包时，点击“下载并安装”，程序显示下载进度，校验附件大小与 GitHub 提供的 SHA-256，然后启动安装器并退出；安装完成后重新启动随译。当前操作或设置未结束时，下载会保留，等待点击“安装更新”。关闭窗口可取消下载，失败时可重试。缺少有效安装包摘要的旧 Release 仍提供发布页面入口。查询和下载都不使用翻译接口或 API Key。
+
+安装版覆盖升级及卸载均保留接口配置、加密密钥和快捷键等偏好。首次从 v0.2.0 及更早版本迁移，需要先手动安装一次新版安装包。便携版使用程序内安装更新时会迁移到安装目录，后续从开始菜单运行安装版。[安装与升级说明](docs/installation.md)
 
 成功填入后，浮窗自动清空原文和译文，下次唤出从空白开始。仅复制、取消、回填失败或结果不确定时保留草稿；`Esc` 也会收起并保留尚未填入的内容，中文选词时先取消组合输入。托盘菜单可以打开复制模式、设置或退出。回填会把译文留在剪贴板。不要在不准备替换的文字上保留选区。
 
@@ -102,16 +104,16 @@ API 地址填写根路径，例如 `https://example.com/v1`；支持已有路径
 
 自包含目录内的文件需要一起复制。可选 `build.ps1 -FrameworkDependent` 生成依赖已安装 .NET 10 Desktop Runtime 的版本，输出到单独目录。
 
-## 自动发布 Windows 便携版
+## 自动发布 Windows 安装包与便携版
 
-推送 `vX.Y.Z` 格式的 tag 后，[GitHub Actions](https://github.com/whoarei/suiyi/actions/workflows/release.yml) 自动运行全部检查、构建 Windows x64 自包含便携包，并发布到对应的 [Release](https://github.com/whoarei/suiyi/releases)。例如：
+推送 `vX.Y.Z` 格式的 tag 后，[GitHub Actions](https://github.com/whoarei/suiyi/actions/workflows/release.yml) 自动运行检查、构建 Windows x64 自包含安装包和便携包，并验证隔离的安装、覆盖升级及卸载流程，再发布到对应的 [Release](https://github.com/whoarei/suiyi/releases)。例如：
 
 ```powershell
 git tag -a v0.1.0 -m "随译 v0.1.0"
 git push origin v0.1.0
 ```
 
-Release 包含 `suiyi-0.1.0-windows-x64-portable.zip` 和同名 `.sha256` 校验文件。下载后完整解压，运行 `Suiyi\TranslationFloat.exe`，无需另装 .NET。API Key 仍由使用者在本机设置，构建不需要翻译服务凭据。
+Release 包含 `suiyi-X.Y.Z-windows-x64-setup.exe`、`suiyi-X.Y.Z-windows-x64-portable.zip` 及各自同名 `.sha256` 文件，均无需另装 .NET。API Key 由使用者在本机设置，构建不需要翻译服务凭据。构建脚本下载固定版本的 Inno Setup 6.7.3 到 `.tools`，校验摘要后以官方便携模式使用，不修改系统 PATH。
 
 `v0.1.0-rc.1` 等带后缀的 tag 自动标为预发布。Actions 页面也支持手动运行，仅生成可下载的构建产物，不创建 Release。失败时可查看运行日志；重新发布已有版本前请先确认现有 Release，流程不会覆盖已有附件。
 
@@ -121,7 +123,7 @@ Release 包含 `suiyi-0.1.0-windows-x64-portable.zip` 和同名 `.sha256` 校验
 .\scripts\package.ps1 -Version 0.1.0
 ```
 
-自动检查共 158 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。更新检查使用 HTTP 替身覆盖版本排序、正式版筛选、官方链接、网络错误、限流、取消及响应大小。开机启动和界面偏好检查使用隔离的测试注册表分支，不修改真实启动项或快捷键偏好。密钥可见性检查使用隐藏的设置控件、临时目录与虚构密钥。真实联调另使用用户在本机保存的凭据，验证接口翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
+自动检查共 173 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。更新检查使用 HTTP 替身覆盖版本排序、正式版筛选、官方链接、下载摘要、重定向、网络错误、限流、取消及响应大小。开机启动和界面偏好检查使用隔离的测试注册表分支，不修改真实启动项或快捷键偏好。密钥可见性检查使用隐藏的设置控件、临时目录与虚构密钥。安装器另用 `scripts/test-installer.ps1 -AppDirectory <自包含目录>` 验证安装、持锁升级和卸载，使用独立 AppId、互斥量、事件、目录及虚构配置。真实翻译联调另使用用户在本机保存的凭据，验证接口翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
 
 诊断日志位于 `%LOCALAPPDATA%\TranslationFloat\m0.log`，仅记录操作阶段、结果、进程名和窗口句柄，不记录输入文本或聊天内容。
 

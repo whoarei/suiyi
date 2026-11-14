@@ -33,3 +33,5 @@ $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerI
 [System.IO.File]::WriteAllText("$archivePath.sha256", "$hash  $archiveName`n", [System.Text.UTF8Encoding]::new($false))
 Write-Output "便携包：$archivePath"
 Write-Output "SHA-256：$hash"
+
+& (Join-Path $PSScriptRoot 'build-installer.ps1') -Version $Version -AppDirectory $appPath -OutputDirectory $releasePath

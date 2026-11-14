@@ -19,6 +19,8 @@ public partial class App : Application
     private readonly QuickModeSettingsStore _quickSettings = new();
     private QuickNoticeWindow? _quickNotice;
     private UpdateWindow? _updateWindow;
+    private EventWaitHandle? _setupExit;
+    private RegisteredWaitHandle? _setupExitWait;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -31,6 +33,8 @@ public partial class App : Application
         base.OnStartup(e);
         _mutex = new Mutex(true, "Local\\TranslationFloat.M0", out var created);
         if (!created) { Shutdown(); return; }
+        _setupExit = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\Suiyi.ExitForSetup");
+        _setupExitWait = ThreadPool.RegisterWaitForSingleObject(_setupExit, (_, _) => Dispatcher.BeginInvoke(() => Shutdown()), null, Timeout.Infinite, false);
         _popup = new PopupWindow { ShowInTaskbar = e.Args.Contains("--diagnostics") };
         _popup.QuickNotice += ShowQuickNotice;
         _popup.HotKeyChanged += RefreshShortcut;
@@ -82,7 +86,7 @@ public partial class App : Application
     private void OpenUpdateWindow()
     {
         if (_updateWindow is not null) { _updateWindow.Activate(); return; }
-        var window = new UpdateWindow();
+        var window = new UpdateWindow(() => _popup?.CanInstallUpdate == true);
         _updateWindow = window;
         window.Closed += (_, _) => { if (ReferenceEquals(_updateWindow, window)) _updateWindow = null; };
         window.Show();
@@ -166,6 +170,8 @@ public partial class App : Application
         _tray?.Dispose();
         _trayMenu?.Dispose();
         _trayIcon?.Dispose();
+        _setupExitWait?.Unregister(null);
+        _setupExit?.Dispose();
         _mutex?.Dispose();
         base.OnExit(e);
     }

@@ -40,6 +40,7 @@ public partial class PopupWindow : Window
     private bool IsComposing => _sourceComposing || _resultComposing;
     public bool QuickModeEnabled { get; private set; }
     public bool IsWorking => _busy || _capturing;
+    public bool CanInstallUpdate => !IsWorking && !_openingSettings;
     public event Action<string>? QuickNotice;
     public event Action? HotKeyChanged;
     public string Shortcut => _hotKey.DisplayName;

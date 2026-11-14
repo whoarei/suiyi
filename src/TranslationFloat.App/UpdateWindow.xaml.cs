@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,15 +14,19 @@ namespace TranslationFloat.App;
 
 public partial class UpdateWindow : Window
 {
-    private readonly HttpClient _client = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly HttpClient _client = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ReleaseVersion _current;
     private Uri? _releasePage;
-    private bool _checking, _closed, _started;
+    private ReleaseInstaller? _installer;
+    private InstallerFile? _downloaded;
+    private readonly Func<bool> _canInstall;
+    private bool _checking, _closed, _started, _downloading, _installing;
 
-    public UpdateWindow()
+    public UpdateWindow(Func<bool>? canInstall = null)
     {
         InitializeComponent();
+        _canInstall = canInstall ?? (() => true);
         var version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!ReleaseVersion.TryParse(version, out var current)) throw new InvalidOperationException("无法识别当前程序版本。");
         _current = current;
@@ -39,6 +45,7 @@ public partial class UpdateWindow : Window
         if (_checking || _closed) return;
         _checking = true;
         _releasePage = null;
+        _installer = null;
         ActionArea.Visibility = Visibility.Visible;
         ActionButton.Visibility = Visibility.Collapsed;
         CheckProgress.Visibility = Visibility.Visible;
@@ -52,9 +59,10 @@ public partial class UpdateWindow : Window
             {
                 case UpdateCheckState.Available:
                     StatusText.Text = "发现新版本 v" + result.Latest;
-                    DetailText.Text = "下载便携包后，退出随译并完整解压替换。";
+                    _installer = result.Installer;
+                    DetailText.Text = _installer is null ? "此版本需要从发布页面下载安装。" : "安装完成后自动重启，本机配置与密钥保留。";
                     _releasePage = result.ReleasePage;
-                    ActionButton.Content = "前往下载";
+                    ActionButton.Content = _installer is null ? "前往下载" : "下载并安装";
                     ActionButton.Visibility = Visibility.Visible;
                     break;
                 case UpdateCheckState.Current:
@@ -91,12 +99,77 @@ public partial class UpdateWindow : Window
 
     private async void Action_Click(object sender, RoutedEventArgs e)
     {
+        if (_downloading || _installing) return;
+        if (_installer is not null) { await DownloadAndInstallAsync(); return; }
         if (_releasePage is null) { await CheckAsync(); return; }
         try { Process.Start(new ProcessStartInfo(_releasePage.AbsoluteUri) { UseShellExecute = true }); }
         catch (Exception error)
         {
             DiagnosticLog.Write("update-open", error.GetType().Name);
             DetailText.Text = "未能打开浏览器，请重试或手动访问 GitHub 上的随译仓库。";
+        }
+    }
+
+    private async Task DownloadAndInstallAsync()
+    {
+        _downloading = true;
+        ActionButton.Visibility = Visibility.Collapsed;
+        CheckProgress.Visibility = Visibility.Visible;
+        CheckProgress.IsIndeterminate = false;
+        try
+        {
+            if (_downloaded is null)
+            {
+                StatusText.Text = "正在下载安装包…";
+                var progress = new Progress<DownloadProgress>(value =>
+                {
+                    if (_closed || !_downloading) return;
+                    CheckProgress.Value = value.Percent;
+                    DetailText.Text = $"{value.Received / 1048576d:F1} / {value.Total / 1048576d:F1} MB · 关闭可取消";
+                });
+                _downloaded = await new InstallerDownload(_client).DownloadAsync(_installer!,
+                    Path.Combine(Path.GetTempPath(), "Suiyi.Updates"), progress, _lifetime.Token);
+            }
+            if (_closed) { InstallerDownload.Discard(_downloaded); _downloaded = null; return; }
+            StatusText.Text = "正在校验安装包…";
+            CheckProgress.IsIndeterminate = true;
+            string verifiedHash;
+            await using (var stream = File.OpenRead(_downloaded.Path))
+                verifiedHash = Convert.ToHexString(await SHA256.HashDataAsync(stream, _lifetime.Token));
+            if (!verifiedHash.Equals(_downloaded.Sha256, StringComparison.OrdinalIgnoreCase))
+            { InstallerDownload.Discard(_downloaded); _downloaded = null; throw new InstallerDownloadException("安装包校验失败，请重试下载。"); }
+            if (_closed) return;
+            if (!_canInstall())
+            {
+                StatusText.Text = "下载完成";
+                DetailText.Text = "请完成当前操作并关闭设置，再点击安装更新。";
+                ActionButton.Content = "安装更新";
+                ActionButton.Visibility = Visibility.Visible;
+                return;
+            }
+            var start = new ProcessStartInfo(_downloaded.Path) { UseShellExecute = true };
+            foreach (var argument in new[] { "/SP-", "/SILENT", "/NORESTART", "/SUIYIUPDATE=1" }) start.ArgumentList.Add(argument);
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("Installer did not start");
+            _installing = true;
+            Application.Current.Shutdown();
+        }
+        catch (OperationCanceledException) when (_closed) { }
+        catch (Exception error)
+        {
+            DiagnosticLog.Write("update-install", error.GetType().Name);
+            if (!_closed)
+            {
+                StatusText.Text = "未能完成更新";
+                DetailText.Text = error is InstallerDownloadException ? error.Message : "未能启动安装，请稍后重试。";
+                ActionButton.Content = _downloaded is null ? "重试下载" : "安装更新";
+                ActionButton.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _downloading = false;
+            if (_closed && !_installing && _downloaded is not null) { InstallerDownload.Discard(_downloaded); _downloaded = null; }
+            if (!_closed) { CheckProgress.Visibility = Visibility.Collapsed; CheckProgress.IsIndeterminate = true; }
         }
     }
 
@@ -109,6 +182,7 @@ public partial class UpdateWindow : Window
     {
         _closed = true;
         _lifetime.Cancel();
+        if (!_installing && !_downloading && _downloaded is not null) InstallerDownload.Discard(_downloaded);
         _client.Dispose();
         _lifetime.Dispose();
     }
