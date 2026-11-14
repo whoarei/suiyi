@@ -64,3 +64,6 @@ static void Check(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
     Console.WriteLine("PASS " + message);
 }
+
+// Private test registry branches only; never read or change the real login startup key.
+StartupChecks.Run();

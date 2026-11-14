@@ -41,6 +41,14 @@ API 地址固定为 `https://api.deepseek.com/chat/completions`，不将密钥�
 
 程序只运行一个实例；已经在托盘运行时，再次打开会直接退出新实例，请使用快捷键唤出原实例。
 
+## 开机启动
+
+首次运行默认开启。右键托盘图标，可以勾选或取消“开机启动”；关闭后会记住选择，后续手动启动不会重新开启。登录 Windows 后程序仅驻留托盘。
+
+启动项位于当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，值名 `Suiyi`；开启偏好保存在 `HKCU\Software\Suiyi\AutoStartEnabled`，无需管理员权限，也不修改 DeepSeek 配置。便携版请放在固定目录；移动目录后手动运行一次，开启状态下会更新路径。删除程序前可先取消勾选。
+
+只读焦点识别辅助进程不会注册开机启动。[Windows 登录启动项说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
+
 ## 构建与检查
 
 需要 Windows x64 和 .NET SDK 10.0.404。此工作区的 SDK 保存在 `.tools\dotnet`，没有修改系统 PATH。
@@ -80,7 +88,7 @@ Release 包含 `suiyi-0.1.0-windows-x64-portable.zip` 和同名 `.sha256` 校验
 .\scripts\package.ps1 -Version 0.1.0
 ```
 
-自动检查共 68 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。真实联调另使用用户在本机保存的凭据，验证 DeepSeek 翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
+自动检查共 80 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。开机启动检查使用隔离的测试注册表分支，不修改真实启动项。真实联调另使用用户在本机保存的凭据，验证 DeepSeek 翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
 
 诊断日志位于 `%LOCALAPPDATA%\TranslationFloat\m0.log`，仅记录操作阶段、结果、进程名和窗口句柄，不记录输入文本或聊天内容。
 
