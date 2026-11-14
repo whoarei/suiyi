@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $compiler = & (Join-Path $PSScriptRoot 'ensure-inno.ps1')
 $dotnet = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
+if (-not (Test-Path -LiteralPath $dotnet)) { $dotnet = (Get-Command dotnet -ErrorAction Stop).Source }
 $identity = 'Suiyi.Installer.Smoke.' + [Guid]::NewGuid().ToString('N')
 $root = Join-Path $projectRoot ('artifacts\' + $identity)
 $installed = Join-Path $root 'installed'
