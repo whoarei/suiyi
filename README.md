@@ -61,6 +61,25 @@ API 地址固定为 `https://api.deepseek.com/chat/completions`，不将密钥�
 
 自包含目录内的文件需要一起复制。可选 `build.ps1 -FrameworkDependent` 生成依赖已安装 .NET 10 Desktop Runtime 的版本，输出到单独目录。
 
+## 自动发布 Windows 便携版
+
+推送 `vX.Y.Z` 格式的 tag 后，[GitHub Actions](https://github.com/whoarei/suiyi/actions/workflows/release.yml) 自动运行全部检查、构建 Windows x64 自包含便携包，并发布到对应的 [Release](https://github.com/whoarei/suiyi/releases)。例如：
+
+```powershell
+git tag -a v0.1.0 -m "随译 v0.1.0"
+git push origin v0.1.0
+```
+
+Release 包含 `suiyi-0.1.0-windows-x64-portable.zip` 和同名 `.sha256` 校验文件。下载后完整解压，运行 `Suiyi\TranslationFloat.exe`，无需另装 .NET。API Key 仍由使用者在本机设置，构建不需要 DeepSeek 凭据。
+
+`v0.1.0-rc.1` 等带后缀的 tag 自动标为预发布。Actions 页面也支持手动运行，仅生成可下载的构建产物，不创建 Release。失败时可查看运行日志；重新发布已有版本前请先确认现有 Release，流程不会覆盖已有附件。
+
+本地可以用同一个打包脚本生成版本化便携包，输出到 `artifacts\release`：
+
+```powershell
+.\scripts\package.ps1 -Version 0.1.0
+```
+
 自动检查共 68 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。真实联调另使用用户在本机保存的凭据，验证 DeepSeek 翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
 
 诊断日志位于 `%LOCALAPPDATA%\TranslationFloat\m0.log`，仅记录操作阶段、结果、进程名和窗口句柄，不记录输入文本或聊天内容。

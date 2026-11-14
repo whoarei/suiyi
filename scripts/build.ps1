@@ -1,4 +1,4 @@
-param([switch]$FrameworkDependent)
+param([switch]$FrameworkDependent, [string]$Version, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $dotnetPath = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
@@ -15,9 +15,11 @@ try {
     & $dotnetPath run --project 'tests\TranslationFloat.Native.Tests\TranslationFloat.Native.Tests.csproj' -c Release
     if ($LASTEXITCODE -ne 0) { throw '原生输入结构检查失败。' }
     $outputName = if ($FrameworkDependent) { 'TranslationFloat-framework-dependent' } else { 'TranslationFloat' }
-    $outputPath = Join-Path $projectRoot ('artifacts\' + $outputName)
+    $outputPath = if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot ('artifacts\' + $outputName) }
     $selfContained = if ($FrameworkDependent) { 'false' } else { 'true' }
-    & $dotnetPath publish 'src\TranslationFloat.App\TranslationFloat.App.csproj' -c Release -r win-x64 --self-contained $selfContained -o $outputPath --nologo
+    $versionArguments = @()
+    if ($Version) { $versionArguments += "-p:Version=$Version" }
+    & $dotnetPath publish 'src\TranslationFloat.App\TranslationFloat.App.csproj' -c Release -r win-x64 --self-contained $selfContained -o $outputPath --nologo @versionArguments
     if ($LASTEXITCODE -ne 0) { throw '发布文件生成失败。' }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\quickstart.txt') -Destination (Join-Path $outputPath '使用说明.txt') -Force
     Write-Output "程序：$outputPath\TranslationFloat.exe"
