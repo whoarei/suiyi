@@ -1,9 +1,10 @@
 namespace TranslationFloat.Core;
 
-// Only control metadata crosses the helper boundary; never text or accessible names.
+// Selected text is requested explicitly; accessible names and full field values are never read.
 public sealed record FocusObservation(
     bool Available, bool BelongsToTarget, bool Enabled, bool Password,
-    bool? ReadOnly, bool? Editable, string? FocusId, string ControlKind)
+    bool? ReadOnly, bool? Editable, string? FocusId, string ControlKind,
+    SelectionSnapshot? Selection = null)
 {
     public static FocusObservation Unavailable { get; } = new(false, false, false, false, null, null, null, "Unknown");
     public bool Reject => Available && (!BelongsToTarget || !Enabled || Password || ReadOnly == true || Editable == false);

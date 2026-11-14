@@ -17,9 +17,9 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        if (e.Args.Length == 2 && e.Args[0] == "--inspect-focus")
+        if (e.Args.Length == 2 && e.Args[0] is "--inspect-focus" or "--inspect-selection")
         {
-            FocusInspector.Run(e.Args[1]);
+            FocusInspector.Run(e.Args[1], e.Args[0] == "--inspect-selection");
             Shutdown();
             return;
         }

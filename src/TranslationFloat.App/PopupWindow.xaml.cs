@@ -27,6 +27,7 @@ public partial class PopupWindow : Window
     private nint _handle;
     private string? _notice;
     private bool _noticeIsError;
+    private bool _selectionDraft;
     private string _targetHint = "";
     private bool _busy, _sourceComposing, _resultComposing, _disposed, _hotKeyRegistered, _rendering, _openingSettings, _capturing;
     private bool IsComposing => _sourceComposing || _resultComposing;
@@ -136,6 +137,17 @@ public partial class PopupWindow : Window
             var capture = await _platform.CaptureTargetAsync(_lifetime.Token);
             if (_disposed) return;
             _target = capture.Target;
+            _translation?.Suspend();
+            if (capture.SelectedText is { } selected)
+            {
+                DraftText.Text = selected;
+                _selectionDraft = true;
+            }
+            else if (_selectionDraft)
+            {
+                DraftText.Clear();
+                _selectionDraft = false;
+            }
             DiagnosticLog.Write("capture-result", capture.Target is null ? "copy-mode" : "bound");
             _targetHint = capture.Message;
             _notice = capture.Target is null ? capture.Message : null;
@@ -210,8 +222,9 @@ public partial class PopupWindow : Window
         DraftText.IsReadOnly = _busy;
         TargetText.Text = _target?.DisplayName ?? "";
         TargetText.ToolTip = _targetHint;
-        PrimaryButton.Content = _busy ? "…" : _target is null ? "复制" : "填入";
-        PrimaryButton.ToolTip = _target is null ? "复制译文 · Ctrl+Enter" : "填入 " + _target.DisplayName + " · Ctrl+Enter\n" + _targetHint;
+        var action = _target?.Selection is null ? "填入" : "替换";
+        PrimaryButton.Content = _busy ? "…" : _target is null ? "复制" : action;
+        PrimaryButton.ToolTip = _target is null ? "复制译文 · Ctrl+Enter" : action + " " + _target.DisplayName + " · Ctrl+Enter\n" + _targetHint;
     }
 
     private async Task InsertAsync()
@@ -233,6 +246,7 @@ public partial class PopupWindow : Window
             _translation.Suspend();
             // Clearing the source also cancels old responses and clears the result.
             DraftText.Clear();
+            _selectionDraft = false;
             SetNotice(null);
             Hide();
         }

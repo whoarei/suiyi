@@ -57,6 +57,15 @@ internal static class NativeMethods
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindowAsync(nint hwnd, int command);
     [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] internal static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll")] internal static extern nint GetClipboardOwner();
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool OpenClipboard(nint owner);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool CloseClipboard();
+    [DllImport("user32.dll")] internal static extern nint GetClipboardData(uint format);
+    [DllImport("kernel32.dll")] internal static extern nint GlobalLock(nint handle);
+    [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GlobalUnlock(nint handle);
+    [DllImport("kernel32.dll")] internal static extern nuint GlobalSize(nint handle);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    private static extern nint GetSelectionRange(nint hwnd, uint message, ref uint start, ref uint end, uint flags, uint timeout, out nuint result);
     [DllImport("user32.dll", SetLastError = true)] internal static extern uint SendInput(uint count, Input[] inputs, int size);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool UnregisterHotKey(nint hwnd, int id);
@@ -75,4 +84,11 @@ internal static class NativeMethods
     };
 
     internal static Input[] PasteInputs() => [Key(0x11, false), Key(0x56, false), Key(0x56, true), Key(0x11, true)];
+    internal static Input[] CopyInputs() => [Key(0x11, false), Key(0x43, false), Key(0x43, true), Key(0x11, true)];
+
+    internal static bool TryGetSelection(nint window, out uint start, out uint end)
+    {
+        start = end = 0;
+        return GetSelectionRange(window, 0x00B0, ref start, ref end, 0x0002, 100, out _) != 0;
+    }
 }

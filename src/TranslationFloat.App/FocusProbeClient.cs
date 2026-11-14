@@ -11,7 +11,7 @@ namespace TranslationFloat.App;
 
 internal sealed class FocusProbeClient
 {
-    public async Task<FocusObservation> InspectAsync(nint root, CancellationToken cancellationToken)
+    public async Task<FocusObservation> InspectAsync(nint root, CancellationToken cancellationToken, bool readSelection = false)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(900));
@@ -27,7 +27,7 @@ internal sealed class FocusProbeClient
             };
             if (System.IO.Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
                 child.StartInfo.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-            child.StartInfo.ArgumentList.Add("--inspect-focus");
+            child.StartInfo.ArgumentList.Add(readSelection ? "--inspect-selection" : "--inspect-focus");
             child.StartInfo.ArgumentList.Add(root.ToInt64().ToString(CultureInfo.InvariantCulture));
             child.StartInfo.Environment.Remove("DEEPSEEK_API_KEY");
             if (!child.Start()) return FocusObservation.Unavailable;

@@ -23,6 +23,11 @@ var nativeControlThread = new Thread(() =>
         Check((ordinaryStyle & 0x0080) != 0 && !NativeMethods.BlocksTextInsertion(ordinaryStyle), "真实 Win32 单行输入框的自动横滚样式不会被当成密码字段");
         Check(NativeMethods.BlocksTextInsertion(NativeMethods.GetWindowLongPtr(password.Handle, -16).ToInt64()), "真实 Win32 密码框被拦截");
         Check(NativeMethods.BlocksTextInsertion(NativeMethods.GetWindowLongPtr(readOnly.Handle, -16).ToInt64()), "真实 Win32 只读框被拦截");
+        ordinary.Text = "before 中间 after";
+        ordinary.Select(7, 2);
+        Check(NativeMethods.TryGetSelection(ordinary.Handle, out var start, out var end) && start == 7 && end == 9, "有界原生读取取得精确选区");
+        ordinary.Select(9, 0);
+        Check(NativeMethods.TryGetSelection(ordinary.Handle, out start, out end) && start == end, "光标位置不会被当作选中文字");
     }
     catch (Exception exception) { nativeControlFailure = exception; }
 });
@@ -30,7 +35,7 @@ nativeControlThread.SetApartmentState(ApartmentState.STA);
 nativeControlThread.Start();
 nativeControlThread.Join();
 if (nativeControlFailure is not null) throw nativeControlFailure;
-Console.WriteLine("3 native edit control checks passed; no user windows were accessed.");
+Console.WriteLine("5 native edit control checks passed; no user windows were accessed.");
 
 var testFolder = Path.Combine(Path.GetTempPath(), "TranslationFloat.Settings.Tests." + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(testFolder);

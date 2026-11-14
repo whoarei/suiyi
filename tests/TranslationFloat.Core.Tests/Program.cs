@@ -100,6 +100,30 @@ var tests = new (string Name, Func<Task> Run)[]
     {
         Check(new FocusObservation(true, false, true, false, false, true, "other", "ControlType.Edit").Reject); return Task.CompletedTask;
     }),
+    ("选区变化时拒绝替换并保留译文剪贴板", async () =>
+    {
+        var selected = target with { Selection = SelectionSnapshot.Create("原文", SelectionMethod.NativeEdit, "0:2", 0, 2).Binding };
+        var p = new FakePlatform { SelectionValid = false };
+        var result = await new InsertionCoordinator(p).InsertAsync(selected, "translation");
+        Check(result.Outcome == InsertionOutcome.Rejected && result.Message.Contains("原选区"));
+        Check(p.Writes == 1 && p.PasteCalls == 0);
+    }),
+    ("相同文字不同选区不会被视为原选区", () =>
+    {
+        var original = SelectionSnapshot.Create("secret demo", SelectionMethod.Automation, "10,20,30,40");
+        Check(original.Binding != SelectionSnapshot.Create("secret demo", SelectionMethod.Automation, "50,20,30,40").Binding);
+        Check(original.Binding != SelectionSnapshot.Create("changed demo", SelectionMethod.Automation, "10,20,30,40").Binding);
+        Check(!original.ToString().Contains("secret demo") && !original.Binding!.ToString().Contains("secret demo"));
+        return Task.CompletedTask;
+    }),
+    ("过长选区不截断，不保留可回填绑定", () =>
+    {
+        var snapshot = SelectionSnapshot.Create(new string('x', 2001), SelectionMethod.NativeEdit, "0:2001", 0, 2001);
+        Check(snapshot.State == SelectionState.TooLong && snapshot.Text is null && snapshot.Binding is null);
+        Check(SelectionSnapshot.Create(new string('x', 2000), SelectionMethod.Automation, "range").State == SelectionState.Selected);
+        Check(SelectionSnapshot.Create("", SelectionMethod.Automation, "caret").State == SelectionState.None);
+        return Task.CompletedTask;
+    }),
     ("无法识别的自绘控件不伪造精确控件身份", () =>
     {
         Check(!FocusObservation.Unavailable.HasIdentity);
@@ -114,6 +138,7 @@ static void Check(bool condition) { if (!condition) throw new InvalidOperationEx
 sealed class FakePlatform : IInsertionPlatform
 {
     public bool Valid = true, Restored = true, Focused = true, KeysReleased = true, ThrowOnPaste;
+    public bool SelectionValid = true;
     public uint Sequence = 11;
     public InjectionReceipt Receipt = new(4, 4);
     public int PasteCalls, RestoreCalls, Writes;
@@ -126,6 +151,7 @@ sealed class FakePlatform : IInsertionPlatform
     { RestoreCalls++; return Task.FromResult(Restored); }
     public Task<uint> WriteClipboardAsync(string text, CancellationToken cancellationToken)
     { Writes++; return Task.FromResult(11u); }
+    public Task<bool> PrepareSelectionAsync(TargetSession target, CancellationToken cancellationToken) => Task.FromResult(SelectionValid);
     public Task<bool> VerifyTargetAsync(TargetSession target, CancellationToken cancellationToken) { OnVerify?.Invoke(); return Task.FromResult(Focused); }
     public uint ClipboardSequence => Sequence;
     public InjectionReceipt Paste()

@@ -8,7 +8,8 @@ public sealed record TargetSession(
     long ProcessStartTime,
     string ProcessName,
     string DisplayName,
-    string? AccessibleFocusId = null);
+    string? AccessibleFocusId = null,
+    SelectionBinding? Selection = null);
 
 public enum InsertionOutcome { Rejected, Submitted, Uncertain, Busy }
 
@@ -24,6 +25,7 @@ public interface IInsertionPlatform
     bool IsSessionValid(TargetSession target);
     Task<bool> WaitForKeysReleasedAsync(CancellationToken cancellationToken);
     Task<bool> RestoreTargetAsync(TargetSession target, CancellationToken cancellationToken);
+    Task<bool> PrepareSelectionAsync(TargetSession target, CancellationToken cancellationToken);
     Task<uint> WriteClipboardAsync(string text, CancellationToken cancellationToken);
     Task<bool> VerifyTargetAsync(TargetSession target, CancellationToken cancellationToken);
     uint ClipboardSequence { get; }
@@ -54,10 +56,15 @@ public sealed class InsertionCoordinator(IInsertionPlatform platform)
                 !await platform.RestoreTargetAsync(target, cancellationToken))
                 return Reject("无法恢复原输入位置，请重新唤出或复制文字。");
 
+            // Compatibility copy checks happen before placing the translation on the
+            // clipboard. A later Ctrl+C must never overwrite what Ctrl+V will paste.
+            var selectionValid = await platform.PrepareSelectionAsync(target, cancellationToken);
             var sequence = await platform.WriteClipboardAsync(text, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!platform.IsSessionValid(target) || !await platform.VerifyTargetAsync(target, cancellationToken) || !platform.IsSessionValid(target))
-                return Reject("输入焦点已改变，已停止回填。文字已留在剪贴板。");
+            if (!selectionValid || !platform.IsSessionValid(target) || !await platform.VerifyTargetAsync(target, cancellationToken) || !platform.IsSessionValid(target))
+                return Reject(target.Selection is null
+                    ? "输入焦点已改变，已停止回填。文字已留在剪贴板。"
+                    : "原选区或输入焦点已改变，已停止替换。译文已留在剪贴板。");
             if (sequence == 0 || platform.ClipboardSequence != sequence)
                 return Reject("剪贴板已改变，已停止回填。");
 
