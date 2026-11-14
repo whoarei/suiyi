@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/TranslationFloat.App/NativeMethods.cs" Link="NativeMethods.cs" />
+    <Compile Include="../../src/TranslationFloat.App/DeepSeekSettingsStore.cs" Link="DeepSeekSettingsStore.cs" />
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+    <ProjectReference Include="../../src/TranslationFloat.Core/TranslationFloat.Core.csproj" />
+  </ItemGroup>
+</Project>

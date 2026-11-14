@@ -1,0 +1,13 @@
+<Window x:Class="TranslationFloat.TestTarget.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="翻译浮窗测试编辑器" Width="650" Height="590" WindowStartupLocation="CenterScreen">
+  <StackPanel Margin="24">
+    <TextBlock Text="回填测试编辑器" FontSize="20" Margin="0,0,0,10" />
+    <TextBlock Text="点击下方输入框，按 Ctrl+Alt+T 唤出浮窗。此窗口没有消息发送功能。" TextWrapping="Wrap" Margin="0,0,0,18" />
+    <TextBox x:Name="InputBox" AutomationProperties.Name="测试输入框" AcceptsReturn="True" TextWrapping="Wrap" Height="180" FontSize="17" Padding="10" />
+    <TextBlock x:Name="Count" Margin="0,12,0,0" />
+    <TextBlock Text="只读字段（应拒绝绑定）" Margin="0,14,0,6" />
+    <TextBox Text="这是只读测试文字" IsReadOnly="True" AutomationProperties.Name="只读测试输入框" Height="38" Padding="8" />
+    <TextBlock Text="密码字段（仅用于识别测试，不填写真实密码）" Margin="0,14,0,6" />
+    <PasswordBox AutomationProperties.Name="密码测试输入框" Height="38" Padding="8" />
+    <Button Content="非输入按钮（应拒绝绑定）" Margin="0,14,0,0" Height="34" />
+  </StackPanel>
+</Window>
