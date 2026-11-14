@@ -8,11 +8,15 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Suiyi.ico</ApplicationIcon>
     <AssemblyName>TranslationFloat</AssemblyName>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TranslationFloat.Core/TranslationFloat.Core.csproj" />
+    <Resource Include="Assets\Suiyi.ico" />
+    <Resource Include="Assets\Suiyi.png" />
+    <EmbeddedResource Include="Assets\Suiyi.Tray.ico" LogicalName="TranslationFloat.Assets.Suiyi.Tray.ico" />
   </ItemGroup>
 </Project>

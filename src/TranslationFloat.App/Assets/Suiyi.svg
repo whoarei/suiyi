@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Suiyi — flowing translation</title>
+  <defs>
+    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12A373"/>
+      <stop offset="1" stop-color="#087A50"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="56" fill="url(#jade)"/>
+  <path fill="#FFFFFF" d="M76 72 H164 V56 L204 88 L164 120 V104 H76 C67.16 104 60 96.84 60 88 C60 79.16 67.16 72 76 72 Z"/>
+  <path fill="#C9F8DE" d="M180 152 H92 V136 L52 168 L92 200 V184 H180 C188.84 184 196 176.84 196 168 C196 159.16 188.84 152 180 152 Z"/>
+</svg>

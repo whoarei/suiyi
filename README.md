@@ -1,5 +1,7 @@
 # 随译 Suiyi
 
+<img src="src/TranslationFloat.App/Assets/Suiyi.png" alt="随译图标" width="64" height="64">
+
 一个面向聊天和日常写作的 Windows 翻译浮窗：唤出浮窗，输入中文并预览译文，再把译文填入原输入框。
 
 当前已接入 DeepSeek，支持跨应用回填，不再限制进程名单。已实测 WPF 编辑框、Edge 网页多行及富文本输入框；此前也已在 Windows 微信 4.2.0.13 的文件传输助手中跑通完整翻译流程。
@@ -93,3 +95,5 @@ Release 包含 `suiyi-0.1.0-windows-x64-portable.zip` 和同名 `.sha256` 校验
 诊断日志位于 `%LOCALAPPDATA%\TranslationFloat\m0.log`，仅记录操作阶段、结果、进程名和窗口句柄，不记录输入文本或聊天内容。
 
 UI Automation 辅助进程仅查询控件类型、启用/只读/密码状态和运行时身份，不读取控件名称、值或正文；每次最多等待 900 毫秒，超时终止辅助进程。
+
+程序、窗口和托盘使用随译专属的玉绿色互译箭头图标。图标已嵌入运行文件，不依赖外部图片目录；[矢量源稿、尺寸预览与生成方法](docs/assets/README.md)随源码保留。

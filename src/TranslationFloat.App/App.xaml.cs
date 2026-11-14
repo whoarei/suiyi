@@ -10,6 +10,7 @@ public partial class App : Application
 {
     private Mutex? _mutex;
     private System.Windows.Forms.NotifyIcon? _tray;
+    private Icon? _trayIcon;
     private PopupWindow? _popup;
     private StartupRegistration? _startup;
     private System.Windows.Forms.ToolStripMenuItem? _startupItem;
@@ -37,10 +38,11 @@ public partial class App : Application
         menu.Items.Add(_startupItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Shutdown());
+        _trayIcon = LoadTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
         {
-            Text = "翻译浮窗 · Ctrl+Alt+T",
-            Icon = SystemIcons.Application,
+            Text = "随译 · Ctrl+Alt+T",
+            Icon = _trayIcon,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -56,6 +58,14 @@ public partial class App : Application
         catch (Exception error) { StartupFailed(error); }
         if (e.Args.Contains("--settings")) _popup.OpenSettings();
         else if (e.Args.Contains("--show")) _popup.OpenWithoutTarget();
+    }
+
+    private static Icon LoadTrayIcon()
+    {
+        using var stream = typeof(App).Assembly.GetManifestResourceStream("TranslationFloat.Assets.Suiyi.Tray.ico")
+            ?? throw new InvalidOperationException("缺少随译托盘图标资源。");
+        using var icon = new Icon(stream, System.Windows.Forms.SystemInformation.SmallIconSize);
+        return (Icon)icon.Clone();
     }
 
     private void RefreshStartupItem()
@@ -89,6 +99,7 @@ public partial class App : Application
     {
         _popup?.ReleaseResources();
         _tray?.Dispose();
+        _trayIcon?.Dispose();
         _mutex?.Dispose();
         base.OnExit(e);
     }
