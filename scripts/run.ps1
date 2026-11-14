@@ -1,4 +1,4 @@
-param([switch]$Show, [switch]$Diagnostics, [switch]$Settings)
+param([switch]$Show, [switch]$Diagnostics, [switch]$Settings, [switch]$CheckUpdates)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $appPath = Join-Path $projectRoot 'artifacts\TranslationFloat\TranslationFloat.exe'
@@ -10,6 +10,7 @@ $appArguments = @()
 if ($Show) { $appArguments += '--show' }
 if ($Diagnostics) { $appArguments += '--diagnostics' }
 if ($Settings) { $appArguments += '--settings' }
+if ($CheckUpdates) { $appArguments += '--check-updates' }
 $startOptions = @{ FilePath = $appPath; WorkingDirectory = $projectRoot; WindowStyle = 'Hidden'; PassThru = $true }
 if ($appArguments.Count -gt 0) { $startOptions.ArgumentList = $appArguments }
 $started = Start-Process @startOptions

@@ -12,6 +12,8 @@
     <AssemblyName>TranslationFloat</AssemblyName>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
+    <!-- Release packaging overrides this with the version from its Git tag. -->
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TranslationFloat.Core/TranslationFloat.Core.csproj" />

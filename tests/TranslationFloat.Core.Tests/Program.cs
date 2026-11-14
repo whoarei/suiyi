@@ -137,7 +137,7 @@ var tests = new (string Name, Func<Task> Run)[]
         Check(!new FocusObservation(true, true, true, false, null, null, "root", "ControlType.Window").HasIdentity); return Task.CompletedTask;
     })
 };
-var allTests = tests.Concat(QuickTranslationChecks.Cases(target)).ToArray();
+var allTests = tests.Concat(QuickTranslationChecks.Cases(target)).Concat(UpdateChecks.Cases()).ToArray();
 foreach (var test in allTests) { await test.Run(); Console.WriteLine("PASS " + test.Name); }
 Console.WriteLine($"{allTests.Length} checks passed.");
 

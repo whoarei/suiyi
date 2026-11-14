@@ -18,6 +18,7 @@ public partial class App : Application
     private System.Windows.Forms.ToolStripMenuItem? _quickModeItem;
     private readonly QuickModeSettingsStore _quickSettings = new();
     private QuickNoticeWindow? _quickNotice;
+    private UpdateWindow? _updateWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -40,6 +41,7 @@ public partial class App : Application
         var menu = _trayMenu = new TrayMenu();
         var openItem = menu.AddAction("打开随译", TrayMenuGlyph.Open, (_, _) => _popup.OpenWithoutTarget());
         var settingsItem = menu.AddAction("设置", TrayMenuGlyph.Settings, (_, _) => _popup.OpenSettings());
+        menu.AddAction("检查更新", TrayMenuGlyph.Update, (_, _) => OpenUpdateWindow());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         _quickModeItem = menu.AddAction("快速模式", TrayMenuGlyph.Quick, (_, _) => ToggleQuickMode());
         _quickModeItem.Checked = _popup.QuickModeEnabled;
@@ -70,11 +72,22 @@ public partial class App : Application
             DiagnosticLog.Write("startup", _startup.IsEnabled ? "enabled" : "disabled");
         }
         catch (Exception error) { StartupFailed(error); }
-        if (e.Args.Contains("--settings")) _popup.OpenSettings();
+        if (e.Args.Contains("--check-updates")) OpenUpdateWindow();
+        else if (e.Args.Contains("--settings")) _popup.OpenSettings();
         else if (e.Args.Contains("--show")) _popup.OpenWithoutTarget();
     }
 
     private string TrayText => "随译 · " + (_popup?.QuickModeEnabled == true ? "快速模式 · " : "") + _popup?.Shortcut;
+
+    private void OpenUpdateWindow()
+    {
+        if (_updateWindow is not null) { _updateWindow.Activate(); return; }
+        var window = new UpdateWindow();
+        _updateWindow = window;
+        window.Closed += (_, _) => { if (ReferenceEquals(_updateWindow, window)) _updateWindow = null; };
+        window.Show();
+        window.Activate();
+    }
 
     private void RefreshShortcut()
     {
@@ -149,6 +162,7 @@ public partial class App : Application
     {
         _popup?.ReleaseResources();
         _quickNotice?.Close();
+        _updateWindow?.Close();
         _tray?.Dispose();
         _trayMenu?.Dispose();
         _trayIcon?.Dispose();

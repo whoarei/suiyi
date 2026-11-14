@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 namespace TranslationFloat.App;
 
-internal enum TrayMenuGlyph { Open, Settings, Quick, Startup, Exit }
+internal enum TrayMenuGlyph { Open, Settings, Update, Quick, Startup, Exit }
 
 // Keep native menu navigation, dismissal and accessibility; draw the surface ourselves.
 internal sealed class TrayMenu : ContextMenuStrip
@@ -181,6 +181,10 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
                 break;
             case TrayMenuGlyph.Quick:
                 graphics.DrawLines(pen, [new PointF(9, 1.5f), new(3, 9), new(7.5f, 9), new(6.5f, 14.5f), new(13, 6.5f), new(8.5f, 6.5f), new(9, 1.5f)]);
+                break;
+            case TrayMenuGlyph.Update:
+                graphics.DrawArc(pen, 2.5f, 2.5f, 11, 11, -75, 280);
+                graphics.DrawLines(pen, [new PointF(9, 1.5f), new(9, 5.5f), new(13, 5.5f)]);
                 break;
             case TrayMenuGlyph.Startup:
                 graphics.DrawArc(pen, 2.5f, 3, 11, 11, -45, 270);
