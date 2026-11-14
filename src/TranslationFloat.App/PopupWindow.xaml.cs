@@ -18,10 +18,17 @@ public partial class PopupWindow : Window
     private readonly WindowsInsertionPlatform _platform;
     private readonly InsertionCoordinator _insertion;
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly DeepSeekSettingsStore _settings = new();
+    private readonly TranslationSettingsStore _settings = new();
+    private readonly HotKeySettingsStore _hotKeySettings = new();
+    private readonly QuickModeSettingsStore _quickSettings = new();
+    private HotKeyBinding _hotKey = HotKeyBinding.Default;
+    private int _registeredHotKeyId = HotKeyId;
     private readonly HttpClient _http = new(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
-    private DeepSeekConfiguration _configuration = new(DeepSeekTranslationProvider.DefaultModel, "");
+    private TranslationConfiguration _configuration = new("", "", "");
+    private bool _shortcutRecording;
     private TranslationController? _translation;
+    private ITranslationProvider? _provider;
+    private CancellationTokenSource? _quickCancellation;
     private TargetSession? _target;
     private HwndSource? _source;
     private nint _handle;
@@ -31,6 +38,17 @@ public partial class PopupWindow : Window
     private string _targetHint = "";
     private bool _busy, _sourceComposing, _resultComposing, _disposed, _hotKeyRegistered, _rendering, _openingSettings, _capturing;
     private bool IsComposing => _sourceComposing || _resultComposing;
+    public bool QuickModeEnabled { get; private set; }
+    public bool IsWorking => _busy || _capturing;
+    public event Action<string>? QuickNotice;
+    public event Action? HotKeyChanged;
+    public string Shortcut => _hotKey.DisplayName;
+
+    public void SetQuickModeEnabled(bool enabled)
+    {
+        QuickModeEnabled = enabled;
+        if (!enabled) _quickCancellation?.Cancel();
+    }
 
     public PopupWindow()
     {
@@ -60,15 +78,16 @@ public partial class PopupWindow : Window
         };
     }
 
-    private void ApplyConfiguration(DeepSeekConfiguration configuration)
+    private void ApplyConfiguration(TranslationConfiguration configuration)
     {
         _configuration = configuration;
         ITranslationProvider? provider = null;
         if (configuration.IsConfigured)
         {
-            try { provider = new DeepSeekTranslationProvider(_http, configuration.ApiKey, configuration.Model); }
-            catch (ArgumentException) { _configuration = configuration with { ApiKey = "" }; }
+            try { provider = new OpenAiTranslationProvider(_http, configuration.BaseUrl, configuration.ApiKey, configuration.Model); }
+            catch (ArgumentException) { _configuration = configuration with { Model = "" }; }
         }
+        _provider = provider;
         _translation?.Configure(provider);
         RefreshActions();
     }
@@ -112,21 +131,78 @@ public partial class PopupWindow : Window
         _handle = new WindowInteropHelper(this).EnsureHandle();
         _source = HwndSource.FromHwnd(_handle);
         _source?.AddHook(WindowProc);
-        _hotKeyRegistered = NativeMethods.RegisterHotKey(_handle, HotKeyId, 0x4000 | 0x0002 | 0x0001, 0x54);
-        if (!_hotKeyRegistered) SetNotice("Ctrl+Alt+T 已被占用，请关闭冲突程序后重启。", true);
+        try { _hotKey = _hotKeySettings.Load(); }
+        catch (Exception error) { DiagnosticLog.Write("hotkey-settings", error.GetType().Name); }
+        _hotKeyRegistered = NativeMethods.RegisterHotKey(_handle, _registeredHotKeyId, 0x4000 | _hotKey.Modifiers, _hotKey.VirtualKey);
+        if (!_hotKeyRegistered && _hotKey != HotKeyBinding.Default)
+        {
+            _hotKey = HotKeyBinding.Default;
+            _hotKeyRegistered = NativeMethods.RegisterHotKey(_handle, _registeredHotKeyId, 0x4000 | _hotKey.Modifiers, _hotKey.VirtualKey);
+        }
+        if (!_hotKeyRegistered) SetNotice("快捷键已被占用，请从托盘设置更换。", true);
+        _platform.TriggerKey = (int)_hotKey.VirtualKey;
         DiagnosticLog.Write("started", _hotKeyRegistered ? "hotkey-registered" : "hotkey-unavailable");
     }
 
     private nint WindowProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (message != 0x0312 || wParam != HotKeyId) return 0;
+        if (message != 0x0312 || wParam != _registeredHotKeyId) return 0;
         DiagnosticLog.Write("hotkey", "received");
         handled = true;
+        if (_openingSettings) return 0;
+        if (_quickCancellation is not null) { _quickCancellation.Cancel(); return 0; }
         if (_busy || _capturing) return 0;
         if (IsVisible && IsActive) { HideDraft(); return 0; }
         // Capture BEFORE Show/Activate: otherwise the foreground window is this popup.
-        _ = OpenFromForegroundAsync();
+        _ = QuickModeEnabled ? TranslateSelectionQuicklyAsync() : OpenFromForegroundAsync();
         return 0;
+    }
+
+    private async Task TranslateSelectionQuicklyAsync()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _quickCancellation = cancellation;
+        _busy = _capturing = true;
+        _translation?.Suspend();
+        Hide();
+        try
+        {
+            var capture = await _platform.CaptureTargetAsync(cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (_disposed) return;
+            _target = capture.Target;
+            if (capture.Target is null)
+            {
+                QuickNotice?.Invoke(capture.Message);
+                DiagnosticLog.Write("quick-translation", "no-target");
+                return;
+            }
+            var result = await new QuickTranslationCoordinator(_provider, _insertion)
+                .TranslateAndReplaceAsync(capture.Target, capture.SelectedText, cancellation.Token);
+            if (_disposed) return;
+            DiagnosticLog.Write("quick-translation", result.Outcome.ToString(), capture.Target.ProcessName);
+            if (result.Outcome == InsertionOutcome.Submitted)
+            {
+                DraftText.Clear();
+                _selectionDraft = false;
+                SetNotice(null);
+            }
+            else QuickNotice?.Invoke(result.Message.Replace("Ctrl+Alt+T", Shortcut, StringComparison.Ordinal));
+        }
+        catch (OperationCanceledException)
+        { if (!_disposed) QuickNotice?.Invoke("快速翻译已取消。"); }
+        catch (Exception)
+        {
+            DiagnosticLog.Write("quick-translation", "failed");
+            if (!_disposed) QuickNotice?.Invoke("快速翻译失败，未替换。请重试。");
+        }
+        finally
+        {
+            _target = null;
+            _quickCancellation = null;
+            _busy = _capturing = false;
+            if (!_disposed) RefreshActions();
+        }
     }
 
     private async Task OpenFromForegroundAsync()
@@ -162,9 +238,9 @@ public partial class PopupWindow : Window
     {
         if (_busy || _capturing) return;
         _target = null;
-        _notice = _hotKeyRegistered ? null : "Ctrl+Alt+T 已被占用，请关闭冲突程序后重启。";
+        _notice = _hotKeyRegistered ? null : "快捷键已被占用，请从托盘设置更换。";
         _noticeIsError = !_hotKeyRegistered;
-        _targetHint = "在目标输入框按 Ctrl+Alt+T 唤出，可回填译文。";
+        _targetHint = "在目标输入框按 " + Shortcut + " 唤出，可回填译文。";
         RefreshActions();
         OpenPopup();
     }
@@ -208,7 +284,7 @@ public partial class PopupWindow : Window
         };
         ResultPlaceholder.Visibility = string.IsNullOrEmpty(TranslationText.Text) ? Visibility.Visible : Visibility.Collapsed;
         var needsConfiguration = !_configuration.IsConfigured;
-        var feedback = state.Phase == TranslationPhase.Error ? state.Message : _notice ?? (needsConfiguration ? "请先设置 DeepSeek。" : null);
+        var feedback = state.Phase == TranslationPhase.Error ? state.Message : _notice ?? (needsConfiguration ? "请先设置翻译接口。" : null);
         FeedbackText.Text = feedback ?? "";
         FeedbackText.Foreground = new SolidColorBrush(_noticeIsError || state.Phase == TranslationPhase.Error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(94, 117, 102));
         FeedbackPanel.Visibility = string.IsNullOrEmpty(feedback) ? Visibility.Collapsed : Visibility.Visible;
@@ -291,15 +367,16 @@ public partial class PopupWindow : Window
 
     public void OpenSettings()
     {
-        if (_busy || _openingSettings) return;
-        if (!IsVisible) OpenWithoutTarget();
+        if (_busy || _capturing || _openingSettings) return;
+        var wasVisible = IsVisible;
         _target = null;
         _translation?.Suspend();
         RefreshActions();
         _openingSettings = true;
         try
         {
-            var dialog = new SettingsWindow(_settings, _http, _configuration) { Owner = this };
+            var dialog = new SettingsWindow(_settings, _http, _configuration, _hotKey, QuickModeEnabled, SaveSettings, SetShortcutRecording)
+            { Owner = this, WindowStartupLocation = wasVisible ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen };
             if (dialog.ShowDialog() == true && dialog.Saved is { } saved)
             {
                 ApplyConfiguration(saved);
@@ -307,8 +384,65 @@ public partial class PopupWindow : Window
                 SetNotice(null);
             }
         }
-        finally { _openingSettings = false; _translation?.Resume(); Activate(); DraftText.Focus(); }
+        finally
+        {
+            SetShortcutRecording(false);
+            _openingSettings = false;
+            if (wasVisible) { _translation?.Resume(); Activate(); DraftText.Focus(); }
+        }
     }
+
+    private void SetShortcutRecording(bool recording)
+    {
+        if (recording)
+        {
+            if (_shortcutRecording) return;
+            _shortcutRecording = true;
+            if (_hotKeyRegistered) NativeMethods.UnregisterHotKey(_handle, _registeredHotKeyId);
+            _hotKeyRegistered = false;
+        }
+        else if (_shortcutRecording)
+        {
+            _shortcutRecording = false;
+            _hotKeyRegistered = NativeMethods.RegisterHotKey(_handle, _registeredHotKeyId, 0x4000 | _hotKey.Modifiers, _hotKey.VirtualKey);
+            if (!_hotKeyRegistered) SetNotice("快捷键已被占用，请从托盘设置更换。", true);
+        }
+    }
+
+    private TranslationConfiguration SaveSettings(string baseUrl, string model, string replacementKey, HotKeyBinding binding, bool quickMode)
+    {
+        SetShortcutRecording(false);
+        if (!binding.IsValid) throw new ArgumentException("请使用 Ctrl 或 Alt，搭配字母、数字或 F1–F12。");
+        var changed = binding != _hotKey || !_hotKeyRegistered;
+        var candidateId = _registeredHotKeyId == HotKeyId ? HotKeyId + 1 : HotKeyId;
+        if (changed && !NativeMethods.RegisterHotKey(_handle, candidateId, 0x4000 | binding.Modifiers, binding.VirtualKey))
+            throw new ArgumentException("这个快捷键已被占用，请换一个组合。" + (_hotKeyRegistered ? "原快捷键仍然有效。" : ""));
+        try
+        {
+            var saved = _settings.Save(baseUrl, model, replacementKey);
+            _hotKeySettings.Save(binding);
+            _quickSettings.Save(quickMode);
+            if (changed)
+            {
+                if (_hotKeyRegistered) NativeMethods.UnregisterHotKey(_handle, _registeredHotKeyId);
+                _registeredHotKeyId = candidateId;
+                _hotKeyRegistered = true;
+                _hotKey = binding;
+                _platform.TriggerKey = (int)_hotKey.VirtualKey;
+            }
+            SetQuickModeEnabled(quickMode);
+            HotKeyChanged?.Invoke();
+            return saved;
+        }
+        catch
+        {
+            if (changed) NativeMethods.UnregisterHotKey(_handle, candidateId);
+            try { _hotKeySettings.Save(_hotKey); _quickSettings.Save(QuickModeEnabled); }
+            catch (Exception) { }
+            throw;
+        }
+    }
+
     private void Title_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     { if (e.OriginalSource is System.Windows.Controls.TextBlock || e.OriginalSource is System.Windows.Controls.Grid) DragMove(); }
 
@@ -335,7 +469,7 @@ public partial class PopupWindow : Window
         _lifetime.Cancel();
         _translation?.Dispose();
         _http.Dispose();
-        if (_hotKeyRegistered) NativeMethods.UnregisterHotKey(_handle, HotKeyId);
+        if (_hotKeyRegistered) NativeMethods.UnregisterHotKey(_handle, _registeredHotKeyId);
         _source?.RemoveHook(WindowProc);
         _lifetime.Dispose();
     }

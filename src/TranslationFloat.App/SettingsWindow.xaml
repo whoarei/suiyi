@@ -1,23 +1,74 @@
 <Window x:Class="TranslationFloat.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="翻译设置" Icon="Assets/Suiyi.ico" Width="400" SizeToContent="Height" ResizeMode="NoResize"
-        WindowStartupLocation="CenterOwner" Background="#FAFCFA" FontFamily="Segoe UI, Microsoft YaHei"
+        Title="随译 · 设置" Icon="Assets/Suiyi.ico" Width="392" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterOwner" FontFamily="Segoe UI, Microsoft YaHei"
         Closed="Window_Closed" PreviewKeyDown="Window_PreviewKeyDown">
-  <StackPanel Margin="20">
-    <Label Content="DeepSeek API Key" Target="{Binding ElementName=ApiKeyBox}" Padding="0" Margin="0,0,0,7" />
-    <PasswordBox x:Name="ApiKeyBox" AutomationProperties.Name="DeepSeek API Key" AutomationProperties.AutomationId="DeepSeekApiKey" Padding="9" FontSize="15" MaxLength="512" />
-    <TextBlock x:Name="KeyHint" TextWrapping="Wrap" Foreground="#748278" FontSize="11" Margin="0,7,0,16" />
-    <Label Content="模型" Target="{Binding ElementName=ModelBox}" Padding="0" Margin="0,0,0,7" />
-    <ComboBox x:Name="ModelBox" AutomationProperties.Name="DeepSeek 模型" Padding="7" FontSize="14">
-      <ComboBoxItem Content="deepseek-flash" />
-      <ComboBoxItem Content="deepseek-v4-pro" />
-    </ComboBox>
-    <TextBlock x:Name="TestStatus" AutomationProperties.AutomationId="ConnectionStatus" Visibility="Collapsed" TextWrapping="Wrap" Foreground="#66796C" FontSize="12" Margin="0,10,0,0" />
-    <Grid Margin="0,18,0,0">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-      <Button x:Name="TestButton" Content="测试连接" Click="Test_Click" AutomationProperties.AutomationId="TestConnection" />
-      <Button x:Name="SaveButton" Grid.Column="2" Content="保存" Click="Save_Click" Background="#087A50" Foreground="White" BorderBrush="#087A50" AutomationProperties.AutomationId="SaveSettings" />
-    </Grid>
-  </StackPanel>
+  <Window.Resources>
+    <Style TargetType="TextBox">
+      <Setter Property="Height" Value="34" /><Setter Property="Padding" Value="8,6" />
+      <Setter Property="FontSize" Value="12" /><Setter Property="BorderBrush" Value="#DFE5E1" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style TargetType="Label">
+      <Setter Property="Padding" Value="0" /><Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#647369" /><Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Resources>
+  <Border Margin="8" Background="White" BorderBrush="#E0E7E2" BorderThickness="1" CornerRadius="10" Padding="20">
+    <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="1" Opacity="0.09" /></Border.Effect>
+    <StackPanel>
+      <Grid Margin="0,0,0,18" MouseLeftButtonDown="Title_MouseLeftButtonDown">
+        <TextBlock Text="设置" FontSize="17" FontWeight="SemiBold" Foreground="#294233" VerticalAlignment="Center" />
+        <Button Content="×" HorizontalAlignment="Right" Width="24" Height="24" Padding="0" FontSize="21"
+                Background="Transparent" BorderThickness="0" Click="Close_Click" AutomationProperties.Name="关闭设置" ToolTip="关闭 · Esc" />
+      </Grid>
+      <Grid x:Name="Fields">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="60" /><ColumnDefinition /></Grid.ColumnDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Label Content="API 地址" Target="{Binding ElementName=AddressBox}" Margin="0,0,0,12" />
+        <TextBox x:Name="AddressBox" Grid.Column="1" Margin="0,0,0,12" MaxLength="2048" TextChanged="Address_Changed"
+                 AutomationProperties.Name="API 地址" ToolTip="OpenAI 兼容 API 根地址，例如 https://example.com/v1" />
+        <Label Grid.Row="1" Content="API Key" Target="{Binding ElementName=ApiKeyBox}" Margin="0,0,0,12" />
+        <Grid Grid.Row="1" Grid.Column="1" Margin="0,0,0,12">
+          <PasswordBox x:Name="ApiKeyBox" Height="34" Padding="8,6" FontSize="12" BorderBrush="#DFE5E1" MaxLength="4096"
+                       PasswordChanged="ApiKey_Changed" AutomationProperties.Name="API Key" ToolTip="本机加密保存；同一 API 地址下留空保留已有密钥。无鉴权接口可留空。" />
+          <TextBlock x:Name="KeyHint" Text="已保存 · 留空保留" Foreground="#94A098" FontSize="11" VerticalAlignment="Center"
+                     Margin="9,0" IsHitTestVisible="False" Visibility="Collapsed" />
+        </Grid>
+        <Label Grid.Row="2" Content="模型" Target="{Binding ElementName=ModelBox}" Margin="0,0,0,12" />
+        <Grid Grid.Row="2" Grid.Column="1" Margin="0,0,0,12">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <ComboBox x:Name="ModelBox" Height="34" Padding="6" FontSize="12" IsEditable="True" IsTextSearchEnabled="False" TextBoxBase.TextChanged="Model_Changed"
+                    MaxDropDownHeight="220" BorderBrush="#DFE5E1" AutomationProperties.Name="模型名称" ToolTip="获取后选择，也可直接输入模型 ID。" />
+          <Button x:Name="FetchButton" Grid.Column="1" Width="33" Margin="7,0,0,0" Padding="0"
+                  Background="White" BorderBrush="#DFE5E1" Click="FetchModels_Click" AutomationProperties.Name="获取模型" ToolTip="获取模型">
+            <Path Width="14" Height="14" Data="M7,1 L7,10 M3,6 L7,10 L11,6 M2,10 L2,13 L12,13 L12,10"
+                  Stroke="#536C5B" StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+          </Button>
+        </Grid>
+        <Label Grid.Row="3" Content="快捷键" Target="{Binding ElementName=ShortcutBox}" />
+        <Grid Grid.Row="3" Grid.Column="1">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <TextBox x:Name="ShortcutBox" IsReadOnly="True" Cursor="Hand" AutomationProperties.Name="唤出快捷键"
+                   ToolTip="点击后按下新快捷键，至少包含 Ctrl 或 Alt。" PreviewKeyDown="Shortcut_KeyDown"
+                   GotKeyboardFocus="Shortcut_GotFocus" LostKeyboardFocus="Shortcut_LostFocus" />
+          <Button Grid.Column="1" Content="↺" Width="33" Padding="0" Margin="7,0,0,0" FontSize="18" Background="White"
+                  BorderBrush="#DFE5E1" Click="ResetHotKey_Click" ToolTip="恢复 Ctrl+Alt+T" AutomationProperties.Name="恢复默认快捷键" />
+        </Grid>
+      </Grid>
+      <TextBlock x:Name="TestStatus" AutomationProperties.AutomationId="ConnectionStatus" Visibility="Collapsed" TextWrapping="Wrap"
+                 FontSize="12" Margin="0,12,0,0" />
+      <Grid Margin="0,18,0,0">
+        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <CheckBox x:Name="QuickModeBox" Content="快速模式" VerticalAlignment="Center" FontSize="12"
+                  ToolTip="选中文字后按快捷键，后台翻译并直接替换；失败只显示短暂提示。" />
+        <Button x:Name="TestButton" Grid.Column="1" Content="测试" Padding="12,7" Margin="0,0,8,0" Background="White"
+                BorderBrush="#DFE5E1" Click="Test_Click" AutomationProperties.Name="测试翻译接口" />
+        <Button x:Name="SaveButton" Grid.Column="2" Content="保存" Padding="13,7" Background="#087A50" Foreground="White"
+                BorderBrush="#087A50" Click="Save_Click" AutomationProperties.Name="保存设置" />
+      </Grid>
+    </StackPanel>
+  </Border>
 </Window>

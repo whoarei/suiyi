@@ -38,7 +38,7 @@ public sealed class InsertionCoordinator(IInsertionPlatform platform)
     private int _busy;
 
     public async Task<InsertionResult> InsertAsync(
-        TargetSession? target, string text, CancellationToken cancellationToken = default)
+        TargetSession? target, string text, CancellationToken cancellationToken = default, bool restoreTarget = true)
     {
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
             return new(InsertionOutcome.Busy, "正在回填，请稍候。");
@@ -52,9 +52,11 @@ public sealed class InsertionCoordinator(IInsertionPlatform platform)
                 return Reject("原输入位置已失效，请回到输入框重新唤出。");
             if (!await platform.WaitForKeysReleasedAsync(cancellationToken))
                 return Reject("请松开快捷键，再试一次。");
-            if (!platform.IsSessionValid(target) ||
-                !await platform.RestoreTargetAsync(target, cancellationToken))
-                return Reject("无法恢复原输入位置，请重新唤出或复制文字。");
+            if (!platform.IsSessionValid(target) || !(restoreTarget
+                    ? await platform.RestoreTargetAsync(target, cancellationToken)
+                    : await platform.VerifyTargetAsync(target, cancellationToken)))
+                return Reject(restoreTarget ? "无法恢复原输入位置，请重新唤出或复制文字。"
+                    : "原窗口或选区已改变，未替换。请重新选中文字后重试。");
 
             // Compatibility copy checks happen before placing the translation on the
             // clipboard. A later Ctrl+C must never overwrite what Ctrl+V will paste.
@@ -67,6 +69,7 @@ public sealed class InsertionCoordinator(IInsertionPlatform platform)
                     : "原选区或输入焦点已改变，已停止替换。译文已留在剪贴板。");
             if (sequence == 0 || platform.ClipboardSequence != sequence)
                 return Reject("剪贴板已改变，已停止回填。");
+            cancellationToken.ThrowIfCancellationRequested();
 
             // Once a call might have submitted input, this session is never retried.
             _consumed.Add(target.Id);

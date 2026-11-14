@@ -22,7 +22,7 @@ if (-not $runtime.runtimeOptions.includedFrameworks -or $runtime.runtimeOptions.
     throw '发布目录不是自包含版本。'
 }
 $unexpected = Get-ChildItem -LiteralPath $appPath -File -Recurse | Where-Object {
-    $_.Name -in @('deepseek.key', 'settings.json', 'm0.log') -or $_.Name -like '.env*'
+    $_.Name -in @('deepseek.key', 'settings.json', 'm0.log') -or $_.Name -like 'api-*.key' -or $_.Name -like '.env*'
 }
 if ($unexpected) { throw '发布目录包含本机配置或凭据文件。' }
 

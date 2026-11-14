@@ -14,6 +14,9 @@ public partial class App : Application
     private PopupWindow? _popup;
     private StartupRegistration? _startup;
     private System.Windows.Forms.ToolStripMenuItem? _startupItem;
+    private System.Windows.Forms.ToolStripMenuItem? _quickModeItem;
+    private readonly QuickModeSettingsStore _quickSettings = new();
+    private QuickNoticeWindow? _quickNotice;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -27,11 +30,22 @@ public partial class App : Application
         _mutex = new Mutex(true, "Local\\TranslationFloat.M0", out var created);
         if (!created) { Shutdown(); return; }
         _popup = new PopupWindow { ShowInTaskbar = e.Args.Contains("--diagnostics") };
+        _popup.QuickNotice += ShowQuickNotice;
+        _popup.HotKeyChanged += RefreshShortcut;
+        try { _popup.SetQuickModeEnabled(_quickSettings.Load()); }
+        catch (Exception error) { DiagnosticLog.Write("quick-mode-settings", error.GetType().Name); }
         MainWindow = _popup;
         _popup.InitializeHotKey();
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("打开随译", null, (_, _) => _popup.OpenWithoutTarget());
-        menu.Items.Add("设置", null, (_, _) => _popup.OpenSettings());
+        var openItem = menu.Items.Add("打开随译", null, (_, _) => _popup.OpenWithoutTarget());
+        var settingsItem = menu.Items.Add("设置", null, (_, _) => _popup.OpenSettings());
+        _quickModeItem = new System.Windows.Forms.ToolStripMenuItem("快速模式")
+        {
+            Checked = _popup.QuickModeEnabled,
+            ToolTipText = "选中文字后按唤出快捷键，后台翻译并直接替换，不显示翻译浮窗。"
+        };
+        _quickModeItem.Click += (_, _) => ToggleQuickMode();
+        menu.Items.Add(_quickModeItem);
         _startupItem = new System.Windows.Forms.ToolStripMenuItem("开机启动");
         _startupItem.Click += (_, _) => ToggleStartup();
         menu.Items.Add(_startupItem);
@@ -39,13 +53,18 @@ public partial class App : Application
         _trayIcon = LoadTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
         {
-            Text = "随译 · Ctrl+Alt+T",
+            Text = TrayText,
             Icon = _trayIcon,
             ContextMenuStrip = menu,
             Visible = true
         };
         _tray.DoubleClick += (_, _) => _popup.OpenWithoutTarget();
-        menu.Opening += (_, _) => RefreshStartupItem();
+        menu.Opening += (_, _) =>
+        {
+            RefreshStartupItem();
+            openItem.Enabled = settingsItem.Enabled = !_popup.IsWorking;
+            _quickModeItem.Checked = _popup.QuickModeEnabled;
+        };
         try
         {
             _startup = StartupRegistration.ForCurrentProcess();
@@ -56,6 +75,42 @@ public partial class App : Application
         catch (Exception error) { StartupFailed(error); }
         if (e.Args.Contains("--settings")) _popup.OpenSettings();
         else if (e.Args.Contains("--show")) _popup.OpenWithoutTarget();
+    }
+
+    private string TrayText => "随译 · " + (_popup?.QuickModeEnabled == true ? "快速模式 · " : "") + _popup?.Shortcut;
+
+    private void RefreshShortcut()
+    {
+        if (_tray is not null) _tray.Text = TrayText;
+        if (_quickModeItem is not null) _quickModeItem.Checked = _popup?.QuickModeEnabled == true;
+    }
+
+    private void ToggleQuickMode()
+    {
+        if (_popup is null || _quickModeItem is null) return;
+        try
+        {
+            var enabled = !_popup.QuickModeEnabled;
+            _quickSettings.Save(enabled);
+            _popup.SetQuickModeEnabled(enabled);
+            _quickModeItem.Checked = enabled;
+            if (_tray is not null) _tray.Text = TrayText;
+            DiagnosticLog.Write("quick-mode", enabled ? "enabled" : "disabled");
+        }
+        catch (Exception error)
+        {
+            DiagnosticLog.Write("quick-mode-settings", error.GetType().Name);
+            ShowQuickNotice("未能保存快速模式设置，请稍后重试。");
+        }
+    }
+
+    private void ShowQuickNotice(string message)
+    {
+        _quickNotice?.Close();
+        var notice = new QuickNoticeWindow(message);
+        _quickNotice = notice;
+        notice.Closed += (_, _) => { if (ReferenceEquals(_quickNotice, notice)) _quickNotice = null; };
+        notice.Show();
     }
 
     private static Icon LoadTrayIcon()
@@ -96,6 +151,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _popup?.ReleaseResources();
+        _quickNotice?.Close();
         _tray?.Dispose();
         _trayIcon?.Dispose();
         _mutex?.Dispose();

@@ -71,6 +71,13 @@ var tests = new (string Name, Func<Task> Run)[]
         var p = new FakePlatform(); p.OnVerify = () => p.Valid = false;
         await new InsertionCoordinator(p).InsertAsync(target, "hello"); Check(p.PasteCalls == 0);
     }),
+    ("最终控件验证期间取消不会提交粘贴", async () =>
+    {
+        using var cancellation = new CancellationTokenSource();
+        var p = new FakePlatform { OnVerify = cancellation.Cancel };
+        var result = await new InsertionCoordinator(p).InsertAsync(target, "hello", cancellation.Token);
+        Check(result.Outcome == InsertionOutcome.Rejected && p.PasteCalls == 0);
+    }),
     ("未知应用名称可以展示，名称映射不充当白名单", () =>
     {
         Check(TargetPresentation.AppName("MyCustomEditor") == "MyCustomEditor");
@@ -130,8 +137,9 @@ var tests = new (string Name, Func<Task> Run)[]
         Check(!new FocusObservation(true, true, true, false, null, null, "root", "ControlType.Window").HasIdentity); return Task.CompletedTask;
     })
 };
-foreach (var test in tests) { await test.Run(); Console.WriteLine("PASS " + test.Name); }
-Console.WriteLine($"{tests.Length} checks passed.");
+var allTests = tests.Concat(QuickTranslationChecks.Cases(target)).ToArray();
+foreach (var test in allTests) { await test.Run(); Console.WriteLine("PASS " + test.Name); }
+Console.WriteLine($"{allTests.Length} checks passed.");
 
 static void Check(bool condition) { if (!condition) throw new InvalidOperationException("Assertion failed"); }
 
@@ -142,6 +150,7 @@ sealed class FakePlatform : IInsertionPlatform
     public uint Sequence = 11;
     public InjectionReceipt Receipt = new(4, 4);
     public int PasteCalls, RestoreCalls, Writes;
+    public string? Written, Pasted;
     public Task<bool>? Gate;
     public Action? OnVerify;
     public bool IsSessionValid(TargetSession target) => Valid;
@@ -150,10 +159,10 @@ sealed class FakePlatform : IInsertionPlatform
     public Task<bool> RestoreTargetAsync(TargetSession target, CancellationToken cancellationToken)
     { RestoreCalls++; return Task.FromResult(Restored); }
     public Task<uint> WriteClipboardAsync(string text, CancellationToken cancellationToken)
-    { Writes++; return Task.FromResult(11u); }
+    { Writes++; Written = text; return Task.FromResult(11u); }
     public Task<bool> PrepareSelectionAsync(TargetSession target, CancellationToken cancellationToken) => Task.FromResult(SelectionValid);
     public Task<bool> VerifyTargetAsync(TargetSession target, CancellationToken cancellationToken) { OnVerify?.Invoke(); return Task.FromResult(Focused); }
     public uint ClipboardSequence => Sequence;
     public InjectionReceipt Paste()
-    { PasteCalls++; if (ThrowOnPaste) throw new InvalidOperationException(); return Receipt; }
+    { PasteCalls++; Pasted = Written; if (ThrowOnPaste) throw new InvalidOperationException(); return Receipt; }
 }

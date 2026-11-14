@@ -8,6 +8,10 @@ internal static class NativeMethods
 {
     // WinUser.h: ES_PASSWORD is 0x20; 0x80 is ES_AUTOHSCROLL.
     internal static bool BlocksTextInsertion(long editStyle) => (editStyle & (0x0020 | 0x0800)) != 0;
+    internal static bool IsNativeEdit(string className) => className.StartsWith("Edit", StringComparison.OrdinalIgnoreCase) ||
+        className.StartsWith("RichEdit", StringComparison.OrdinalIgnoreCase) ||
+        className.StartsWith("WindowsForms10.EDIT.", StringComparison.OrdinalIgnoreCase) ||
+        className.StartsWith("WindowsForms10.RichEdit", StringComparison.OrdinalIgnoreCase);
 
     [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }
@@ -72,6 +76,7 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(nint hwnd, StringBuilder value, int max);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] internal static extern nint GetWindowLongPtr(nint hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] internal static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] internal static extern nint MonitorFromPoint(Point point, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);

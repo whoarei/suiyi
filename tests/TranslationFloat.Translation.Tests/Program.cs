@@ -9,51 +9,51 @@ const string fakeKey = "test-only-not-a-real-api-key";
 var checks = new List<(string Name, Func<Task> Run)>();
 void Add(string name, Func<Task> run) => checks.Add((name, run));
 
-Add("请求遵循 DeepSeek 协议并关闭思考，不发送聊天历史或工具", async () =>
+Add("通用请求只发送必要聊天参数，不携带厂商专属参数", async () =>
 {
-    using var client = Client(async (request, _) =>
+    using var client = Client(async (request, token) =>
     {
-        Check(request.RequestUri == DeepSeekTranslationProvider.Endpoint && request.Method == HttpMethod.Post);
+        Check(request.RequestUri == new Uri("https://api.test/v1/chat/completions") && request.Method == HttpMethod.Post);
         Check(request.Headers.Authorization?.Scheme == "Bearer" && request.Headers.Authorization.Parameter == fakeKey);
         using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
         var root = body.RootElement;
-        Check(root.GetProperty("model").GetString() == "deepseek-flash");
-        Check(root.GetProperty("thinking").GetProperty("type").GetString() == "disabled");
-        Check(root.GetProperty("response_format").GetProperty("type").GetString() == "json_object");
+        Check(root.GetProperty("model").GetString() == "demo-model");
+        Check(!root.TryGetProperty("thinking", out _) && !root.TryGetProperty("reasoning_effort", out _));
+        Check(!root.TryGetProperty("response_format", out _) && !root.TryGetProperty("temperature", out _) && !root.TryGetProperty("max_tokens", out _));
         Check(!root.GetProperty("stream").GetBoolean() && !root.EnumerateObject().Any(property => property.Name == "tools"));
         var messages = root.GetProperty("messages"); Check(messages.GetArrayLength() == 2);
         Check(messages[0].GetProperty("role").GetString() == "system");
         Check(messages[1].GetProperty("content").GetString() == "你好\n明天见 ✅");
         return Response(JsonSerializer.Serialize(new { lines = new[] { "Hello", "See you tomorrow ✅" } }));
     });
-    var output = await new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好\n明天见 ✅"), default);
+    var output = await new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好\n明天见 ✅"), default);
     Check(output == "Hello\nSee you tomorrow ✅");
 });
 
 Add("只展示最终 content，忽略 reasoning_content", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Json("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"Hello\",\"reasoning_content\":\"hidden reasoning\"}}]}")));
-    Check(await new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default) == "Hello");
+    Check(await new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default) == "Hello");
 });
 
 Add("多行译文保留空行、末尾空行与 CRLF", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Response("{\"lines\":[\"Hello\",\"\",\"See you\",\"\"]}")));
-    var result = await new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好\r\n\r\n再见\r\n"), default);
+    var result = await new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好\r\n\r\n再见\r\n"), default);
     Check(result == "Hello\r\n\r\nSee you\r\n");
 });
 
 Add("模型合并行或额外添加段落时拒绝不完整译文", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Response("{\"lines\":[\"Merged lines\"]}")));
-    var error = await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("第一行\n第二行"), default));
+    var error = await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("第一行\n第二行"), default));
     Check(error.Failure == TranslationFailure.InvalidResponse);
 });
 
 Add("空白原文行不能被模型填入额外内容", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Response("{\"lines\":[\"Hello\",\"unexpected extra\"]}")));
-    var error = await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好\n"), default));
+    var error = await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好\n"), default));
     Check(error.Failure == TranslationFailure.InvalidResponse);
 });
 
@@ -63,7 +63,7 @@ foreach (var entry in new[] { (401, TranslationFailure.Authentication), (403, Tr
     Add($"HTTP {code} 错误归类，不泄露服务端正文", async () =>
     {
         using var client = Client((_, _) => Task.FromResult(new HttpResponseMessage((HttpStatusCode)code) { Content = new StringContent(fakeKey + " private-source") }));
-        var failure = await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default));
+        var failure = await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default));
         Check(failure.Failure == expected && !failure.Message.Contains(fakeKey) && !failure.Message.Contains("private-source"));
     });
 }
@@ -76,14 +76,14 @@ Add("限流保留 Retry-After", async () =>
         response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(7));
         return Task.FromResult(response);
     });
-    var error = await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default));
+    var error = await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default));
     Check(error.Failure == TranslationFailure.RateLimit && error.RetryAfter == TimeSpan.FromSeconds(7));
 });
 
 Add("输出截断时不接受半句译文", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Response("Partial", "length")));
-    Check((await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default))).Failure == TranslationFailure.Incomplete);
+    Check((await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default))).Failure == TranslationFailure.Incomplete);
 });
 
 foreach (var body in new[] { "{}", "not-json", "{\"choices\":[]}", "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":null}}]}" })
@@ -91,34 +91,34 @@ foreach (var body in new[] { "{}", "not-json", "{\"choices\":[]}", "{\"choices\"
     Add("拒绝空译文或无效响应结构", async () =>
     {
         using var client = Client((_, _) => Task.FromResult(Json(body)));
-        Check((await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default))).Failure == TranslationFailure.InvalidResponse);
+        Check((await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default))).Failure == TranslationFailure.InvalidResponse);
     });
 }
 
 Add("响应大小有限制", async () =>
 {
     using var client = Client((_, _) => Task.FromResult(Json(new string('x', 65537))));
-    Check((await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default))).Failure == TranslationFailure.InvalidResponse);
+    Check((await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default))).Failure == TranslationFailure.InvalidResponse);
 });
 
 Add("请求超时映射为可读错误", async () =>
 {
     using var client = Client(async (_, token) => { await Task.Delay(Timeout.Infinite, token); return Response("unreachable"); });
-    Check((await Failure(() => new DeepSeekTranslationProvider(client, fakeKey, timeout: TimeSpan.FromMilliseconds(30)).TranslateAsync(new("你好"), default))).Failure == TranslationFailure.Timeout);
+    Check((await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model", timeout: TimeSpan.FromMilliseconds(30)).TranslateAsync(new("你好"), default))).Failure == TranslationFailure.Timeout);
 });
 
 Add("主动取消不误报网络超时", async () =>
 {
     using var client = Client(async (_, token) => { await Task.Delay(Timeout.Infinite, token); return Response("unreachable"); });
     using var cancel = new CancellationTokenSource(30);
-    try { await new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), cancel.Token); throw new InvalidOperationException("Expected cancellation"); }
+    try { await new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), cancel.Token); throw new InvalidOperationException("Expected cancellation"); }
     catch (OperationCanceledException) { Check(cancel.IsCancellationRequested); }
 });
 
 Add("网络异常不带入原始异常消息", async () =>
 {
     using var client = Client((_, _) => throw new HttpRequestException(fakeKey));
-    var error = await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new("你好"), default));
+    var error = await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new("你好"), default));
     Check(error.Failure == TranslationFailure.Network && !error.Message.Contains(fakeKey));
 });
 
@@ -126,7 +126,7 @@ Add("过长原文不发出 HTTP 请求", async () =>
 {
     var called = false;
     using var client = Client((_, _) => { called = true; return Task.FromResult(Response("bad")); });
-    await Failure(() => new DeepSeekTranslationProvider(client, fakeKey).TranslateAsync(new(new string('中', 2001)), default));
+    await Failure(() => new OpenAiTranslationProvider(client, "https://api.test/v1", fakeKey, "demo-model").TranslateAsync(new(new string('中', 2001)), default));
     Check(!called);
 });
 
@@ -230,6 +230,7 @@ Add("未知异常不会泄露原文或密钥", async () =>
     await Until(() => c.State.Phase == TranslationPhase.Error); Check(!c.State.Message.Contains(fakeKey));
 });
 
+checks.AddRange(OpenAiCompatibilityChecks.Cases());
 foreach (var check in checks) { await check.Run(); Console.WriteLine("PASS " + check.Name); }
 Console.WriteLine($"{checks.Count} translation checks passed; no external requests sent.");
 

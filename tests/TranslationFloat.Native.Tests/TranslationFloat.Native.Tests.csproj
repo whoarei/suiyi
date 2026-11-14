@@ -9,8 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/TranslationFloat.App/NativeMethods.cs" Link="NativeMethods.cs" />
-    <Compile Include="../../src/TranslationFloat.App/DeepSeekSettingsStore.cs" Link="DeepSeekSettingsStore.cs" />
+    <Compile Include="../../src/TranslationFloat.App/TranslationSettingsStore.cs" Link="TranslationSettingsStore.cs" />
     <Compile Include="../../src/TranslationFloat.App/StartupRegistration.cs" Link="StartupRegistration.cs" />
+    <Compile Include="../../src/TranslationFloat.App/QuickModeSettingsStore.cs" Link="QuickModeSettingsStore.cs" />
+    <Compile Include="../../src/TranslationFloat.App/HotKeySettingsStore.cs" Link="HotKeySettingsStore.cs" />
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <ProjectReference Include="../../src/TranslationFloat.Core/TranslationFloat.Core.csproj" />

@@ -105,7 +105,7 @@ public sealed class TranslationController : IDisposable
             if (string.IsNullOrWhiteSpace(_state.Source))
                 _state = new(_state.Source, "", TranslationPhase.Empty, "输入中文，停顿后自动翻译。");
             else if (_provider is null)
-                _state = _state with { Phase = TranslationPhase.NotConfigured, Message = "请先在设置中填写 DeepSeek API Key。" };
+                _state = _state with { Phase = TranslationPhase.NotConfigured, Message = "请先设置翻译接口和模型。" };
             else if (_composing)
                 _state = _state with { Phase = TranslationPhase.Composing, Message = "正在选词，输入完成后开始翻译。" };
             else if (_suspended)
@@ -142,7 +142,7 @@ public sealed class TranslationController : IDisposable
             {
                 if (generation != _generation || pending.IsCancellationRequested || _disposed) return;
                 _lastRequest = DateTimeOffset.UtcNow;
-                _state = _state with { Phase = TranslationPhase.Translating, Message = "DeepSeek 正在翻译…" };
+                _state = _state with { Phase = TranslationPhase.Translating, Message = "正在翻译…" };
             }
             Changed?.Invoke();
             var result = await provider.TranslateAsync(new(source), pending.Token);

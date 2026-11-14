@@ -12,6 +12,7 @@ namespace TranslationFloat.App;
 internal sealed class WindowsInsertionPlatform(Func<TargetSession, bool> isCurrentSession) : IInsertionPlatform
 {
     private readonly FocusProbeClient _focusProbe = new();
+    public int TriggerKey { get; set; } = 0x54;
 
     public async Task<(TargetSession? Target, string Message, string? SelectedText)> CaptureTargetAsync(CancellationToken cancellationToken)
     {
@@ -30,7 +31,7 @@ internal sealed class WindowsInsertionPlatform(Func<TargetSession, bool> isCurre
                 return (null, "输入焦点不属于原窗口，请重新唤出。", null);
             var className = new StringBuilder(256);
             if (focus != 0) NativeMethods.GetClassName(focus, className, className.Capacity);
-            var nativeEdit = IsNativeEdit(className.ToString());
+            var nativeEdit = NativeMethods.IsNativeEdit(className.ToString());
             if (focus != 0 && !NativeMethods.IsWindowEnabled(focus))
                 return (null, "原输入控件不可用，可以复制后手动粘贴。", null);
             if (nativeEdit && NativeMethods.BlocksTextInsertion(NativeMethods.GetWindowLongPtr(focus, -16).ToInt64()))
@@ -92,7 +93,7 @@ internal sealed class WindowsInsertionPlatform(Func<TargetSession, bool> isCurre
     public async Task<bool> WaitForKeysReleasedAsync(CancellationToken cancellationToken)
     {
         // Include Enter: its key-up must not leak into a chat composer after restoring focus.
-        int[] keys = [0x10, 0x11, 0x12, 0x0D, 0x5B, 0x5C, 0x54, 0x43];
+        int[] keys = [0x10, 0x11, 0x12, 0x0D, 0x5B, 0x5C, TriggerKey, 0x43];
         var timer = Stopwatch.StartNew();
         while (timer.ElapsedMilliseconds < 600)
         {
@@ -137,7 +138,7 @@ internal sealed class WindowsInsertionPlatform(Func<TargetSession, bool> isCurre
             var className = new StringBuilder(256);
             NativeMethods.GetClassName(target.FocusWindow, className, className.Capacity);
             if (!NativeMethods.IsWindowEnabled(target.FocusWindow) ||
-                (IsNativeEdit(className.ToString()) && NativeMethods.BlocksTextInsertion(NativeMethods.GetWindowLongPtr(target.FocusWindow, -16).ToInt64()))) return false;
+                (NativeMethods.IsNativeEdit(className.ToString()) && NativeMethods.BlocksTextInsertion(NativeMethods.GetWindowLongPtr(target.FocusWindow, -16).ToInt64()))) return false;
         }
         if (target.AccessibleFocusId is { } identity)
         {
@@ -224,8 +225,6 @@ internal sealed class WindowsInsertionPlatform(Func<TargetSession, bool> isCurre
         }
         finally { NativeMethods.CloseClipboard(); }
     }
-
-    private static bool IsNativeEdit(string className) => className.StartsWith("Edit", StringComparison.OrdinalIgnoreCase) || className.StartsWith("RichEdit", StringComparison.OrdinalIgnoreCase);
 
     public async Task<uint> WriteClipboardAsync(string text, CancellationToken cancellationToken)
     {
