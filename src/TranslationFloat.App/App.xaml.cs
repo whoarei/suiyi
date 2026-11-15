@@ -21,6 +21,7 @@ public partial class App : Application
     private UpdateWindow? _updateWindow;
     private EventWaitHandle? _setupExit;
     private RegisteredWaitHandle? _setupExitWait;
+    private ThemeManager? _theme;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -33,6 +34,7 @@ public partial class App : Application
         base.OnStartup(e);
         _mutex = new Mutex(true, "Local\\TranslationFloat.M0", out var created);
         if (!created) { Shutdown(); return; }
+        _theme = new ThemeManager(Resources);
         _setupExit = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\Suiyi.ExitForSetup");
         _setupExitWait = ThreadPool.RegisterWaitForSingleObject(_setupExit, (_, _) => Dispatcher.BeginInvoke(() => Shutdown()), null, Timeout.Infinite, false);
         _popup = new PopupWindow { ShowInTaskbar = e.Args.Contains("--diagnostics") };
@@ -42,10 +44,12 @@ public partial class App : Application
         catch (Exception error) { DiagnosticLog.Write("quick-mode-settings", error.GetType().Name); }
         MainWindow = _popup;
         _popup.InitializeHotKey();
-        var menu = _trayMenu = new TrayMenu();
+        var menu = _trayMenu = new TrayMenu(() => _theme.Appearance);
         var openItem = menu.AddAction("打开随译", TrayMenuGlyph.Open, (_, _) => _popup.OpenWithoutTarget());
         var settingsItem = menu.AddAction("设置", TrayMenuGlyph.Settings, (_, _) => _popup.OpenSettings());
         menu.AddAction("检查更新", TrayMenuGlyph.Update, (_, _) => OpenUpdateWindow());
+        menu.Items.Add(ThemeMenu.Create(_theme, SelectTheme));
+        _theme.Changed += menu.RefreshTheme;
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         _quickModeItem = menu.AddAction("快速模式", TrayMenuGlyph.Quick, (_, _) => ToggleQuickMode());
         _quickModeItem.Checked = _popup.QuickModeEnabled;
@@ -64,6 +68,7 @@ public partial class App : Application
         _tray.DoubleClick += (_, _) => _popup.OpenWithoutTarget();
         menu.Opening += (_, _) =>
         {
+            _theme.RefreshSystemTheme();
             RefreshStartupItem();
             openItem.Enabled = settingsItem.Enabled = !_popup.IsWorking;
             _quickModeItem.Checked = _popup.QuickModeEnabled;
@@ -82,6 +87,16 @@ public partial class App : Application
     }
 
     private string TrayText => "随译 · " + (_popup?.QuickModeEnabled == true ? "快速模式 · " : "") + _popup?.Shortcut;
+
+    private void SelectTheme(ThemeColor color)
+    {
+        try { _theme?.Select(color); }
+        catch (Exception error)
+        {
+            DiagnosticLog.Write("theme-save", error.GetType().Name);
+            ShowQuickNotice("未能保存主题，请稍后重试。");
+        }
+    }
 
     private void OpenUpdateWindow()
     {
@@ -169,6 +184,7 @@ public partial class App : Application
         _updateWindow?.Close();
         _tray?.Dispose();
         _trayMenu?.Dispose();
+        _theme?.Dispose();
         _trayIcon?.Dispose();
         _setupExitWait?.Unregister(null);
         _setupExit?.Dispose();

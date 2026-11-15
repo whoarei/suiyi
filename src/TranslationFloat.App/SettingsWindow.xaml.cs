@@ -210,7 +210,7 @@ public partial class SettingsWindow : Window
     {
         if (_lifetime.IsCancellationRequested) return;
         TestStatus.Text = message; TestStatus.Visibility = Visibility.Visible;
-        TestStatus.Foreground = new SolidColorBrush(error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(52, 104, 73));
+        TestStatus.SetResourceReference(TextBlock.ForegroundProperty, error ? "Theme.Error" : "Theme.AccentText");
     }
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     { if (e.Key == Key.Escape && !ModelBox.IsDropDownOpen) { e.Handled = true; Close(); } }

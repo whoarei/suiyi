@@ -24,10 +24,18 @@ powershell.exe -NoProfile -STA -File scripts/generate-icons.ps1
 
 ## 快速替换动图
 
-`quick-replace.gif` 用于软件首页，展示选中中文、按下快捷键、原位替换为英文的快速模式体验，前后的称呼与署名保持不变。此为绘制的流程示意，包含 108 帧，循环时长 7.2 秒。
+首页动图使用默认橙色主题，展示选中中文、按下快捷键、原位替换为英文的快速模式体验，前后的称呼与署名保持不变。此为绘制的流程示意，包含 108 帧，循环时长 7.2 秒。
+
+- `quick-replace.gif`、`quick-replace-dark.gif`：中文标注的浅色与深色版本。
+- `quick-replace.en.gif`、`quick-replace-dark.en.gif`：英文标注的浅色与深色版本。
+
+中英文 README 通过 `<picture>` 按阅读者的深浅偏好选择对应动图。
 
 图形使用 WPF 绘制，以 FFmpeg 编码为 GIF。重新生成需要 Windows 和可用的 `ffmpeg` 命令：
 
 ```powershell
 powershell.exe -NoProfile -STA -File scripts/generate-readme-demo.ps1
+powershell.exe -NoProfile -STA -File scripts/generate-readme-demo.ps1 -Mode Dark
+powershell.exe -NoProfile -STA -File scripts/generate-readme-demo.ps1 -Language en
+powershell.exe -NoProfile -STA -File scripts/generate-readme-demo.ps1 -Language en -Mode Dark
 ```

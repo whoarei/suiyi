@@ -287,7 +287,8 @@ public partial class PopupWindow : Window
         var needsConfiguration = !_configuration.IsConfigured;
         var feedback = state.Phase == TranslationPhase.Error ? state.Message : _notice ?? (needsConfiguration ? "请先设置翻译接口。" : null);
         FeedbackText.Text = feedback ?? "";
-        FeedbackText.Foreground = new SolidColorBrush(_noticeIsError || state.Phase == TranslationPhase.Error ? Color.FromRgb(164, 57, 47) : Color.FromRgb(94, 117, 102));
+        FeedbackText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+            _noticeIsError || state.Phase == TranslationPhase.Error ? "Theme.Error" : "Theme.Muted");
         FeedbackPanel.Visibility = string.IsNullOrEmpty(feedback) ? Visibility.Collapsed : Visibility.Visible;
         RetryButton.Visibility = state.Phase == TranslationPhase.Error ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.IsEnabled = !_busy && !IsComposing;

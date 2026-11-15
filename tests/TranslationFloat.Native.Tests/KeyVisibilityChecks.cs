@@ -66,7 +66,7 @@ internal static class KeyVisibilityChecks
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start(); thread.Join();
-        if (failure is not null) throw failure;
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         Console.WriteLine("9 key visibility checks passed; hidden test controls and fake keys only.");
     }
 

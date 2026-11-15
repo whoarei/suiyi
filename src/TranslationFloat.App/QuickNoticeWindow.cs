@@ -28,9 +28,13 @@ internal sealed class QuickNoticeWindow : Window
         Content = new Border
         {
             CornerRadius = new CornerRadius(10), Padding = new Thickness(16, 12, 16, 12),
-            Background = new SolidColorBrush(Color.FromRgb(36, 59, 44)),
-            Child = new TextBlock { Text = message, Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap }
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock { Text = message, FontSize = 13, TextWrapping = TextWrapping.Wrap }
         };
+        var surface = (Border)Content;
+        surface.SetResourceReference(Border.BackgroundProperty, "Theme.Notice");
+        surface.SetResourceReference(Border.BorderBrushProperty, "Theme.AccentBorder");
+        ((TextBlock)surface.Child).SetResourceReference(TextBlock.ForegroundProperty, "Theme.OnNotice");
         SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(this).Handle;

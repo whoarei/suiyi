@@ -5,22 +5,22 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterScreen" FontFamily="Segoe UI, Microsoft YaHei"
         Loaded="Window_Loaded" Closed="Window_Closed" PreviewKeyDown="Window_PreviewKeyDown">
-  <Border Margin="8" Background="White" BorderBrush="#E0E7E2" BorderThickness="1" CornerRadius="10" Padding="20">
+  <Border Margin="8" Background="{DynamicResource Theme.Surface}" BorderBrush="{DynamicResource Theme.Border}" BorderThickness="1" CornerRadius="10" Padding="20">
     <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="1" Opacity="0.09" /></Border.Effect>
     <StackPanel>
       <Grid Margin="0,0,0,6" MouseLeftButtonDown="Title_MouseLeftButtonDown">
-        <TextBlock Text="检查更新" FontSize="17" FontWeight="SemiBold" Foreground="#294233" VerticalAlignment="Center" />
+        <TextBlock Text="检查更新" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource Theme.Text}" VerticalAlignment="Center" />
         <Button Content="×" HorizontalAlignment="Right" Width="24" Height="24" Padding="0" FontSize="21"
                 Background="Transparent" BorderThickness="0" Click="Close_Click" AutomationProperties.Name="关闭检查更新" ToolTip="关闭 · Esc" />
       </Grid>
-      <TextBlock x:Name="CurrentVersionText" FontSize="12" Foreground="#819087" Margin="0,0,0,24" />
-      <TextBlock x:Name="StatusText" Text="正在检查…" FontSize="16" FontWeight="SemiBold" Foreground="#294233" TextWrapping="Wrap" />
-      <TextBlock x:Name="DetailText" Text="正在获取最新正式版本。" FontSize="12" Foreground="#647369" TextWrapping="Wrap" Margin="0,8,0,18" />
+      <TextBlock x:Name="CurrentVersionText" FontSize="12" Foreground="{DynamicResource Theme.Muted}" Margin="0,0,0,24" />
+      <TextBlock x:Name="StatusText" Text="正在检查…" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Theme.Text}" TextWrapping="Wrap" />
+      <TextBlock x:Name="DetailText" Text="正在获取最新正式版本。" FontSize="12" Foreground="{DynamicResource Theme.Muted}" TextWrapping="Wrap" Margin="0,8,0,18" />
       <Grid x:Name="ActionArea" Height="34">
         <ProgressBar x:Name="CheckProgress" Height="3" VerticalAlignment="Center" IsIndeterminate="True"
-                     Background="#EDF3EF" Foreground="#087A50" BorderThickness="0" AutomationProperties.Name="正在检查更新" />
+                     Background="{DynamicResource Theme.Control}" Foreground="{DynamicResource Theme.Accent}" BorderThickness="0" AutomationProperties.Name="正在检查更新" />
         <Button x:Name="ActionButton" Content="重试" Visibility="Collapsed" HorizontalAlignment="Right" Padding="16,7"
-                Background="#087A50" Foreground="White" BorderThickness="0" Click="Action_Click" />
+                Background="{DynamicResource Theme.Accent}" Foreground="{DynamicResource Theme.OnAccent}" BorderThickness="0" Click="Action_Click" />
       </Grid>
     </StackPanel>
   </Border>

@@ -6,22 +6,32 @@ using System.Windows.Forms;
 
 namespace TranslationFloat.App;
 
-internal enum TrayMenuGlyph { Open, Settings, Update, Quick, Startup, Exit }
+internal enum TrayMenuGlyph { Open, Settings, Update, Theme, Quick, Startup, Exit }
 
 // Keep native menu navigation, dismissal and accessibility; draw the surface ourselves.
 internal sealed class TrayMenu : ContextMenuStrip
 {
     private readonly Font _menuFont = new("Microsoft YaHei UI", 9f);
+    private readonly Func<ThemeAppearance> _theme;
 
-    public TrayMenu()
+    public TrayMenu(Func<ThemeAppearance> theme)
     {
+        _theme = theme;
         AutoSize = false;
         ShowImageMargin = ShowCheckMargin = false;
         DropShadowEnabled = true;
         Font = _menuFont;
-        BackColor = Color.White;
-        ForeColor = Color.FromArgb(41, 66, 51);
-        Renderer = new TrayMenuRenderer();
+        Renderer = new TrayMenuRenderer(theme);
+        RefreshTheme();
+    }
+
+    public void RefreshTheme()
+    {
+        BackColor = TrayMenuRenderer.Native(_theme()["Surface"]);
+        ForeColor = TrayMenuRenderer.Native(_theme()["Text"]);
+        foreach (ToolStripItem item in Items)
+            if (item is ToolStripMenuItem { HasDropDownItems: true } menu && menu.DropDown is TrayMenu child) child.RefreshTheme();
+        Invalidate();
     }
 
     public ToolStripMenuItem AddAction(string text, TrayMenuGlyph glyph, EventHandler action)
@@ -35,7 +45,7 @@ internal sealed class TrayMenu : ContextMenuStrip
     protected override void OnOpening(CancelEventArgs e)
     {
         base.OnOpening(e);
-        if (!e.Cancel) MeasureMenu();
+        if (!e.Cancel) { RefreshTheme(); MeasureMenu(); }
     }
 
     protected override void OnOpened(EventArgs e)
@@ -80,18 +90,15 @@ internal sealed class TrayMenu : ContextMenuStrip
     { base.Dispose(disposing); if (disposing) _menuFont.Dispose(); }
 }
 
-internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
+internal sealed class TrayMenuRenderer(Func<ThemeAppearance> theme) : ToolStripProfessionalRenderer
 {
-    private static readonly Color Ink = Color.FromArgb(41, 66, 51);
-    private static readonly Color Muted = Color.FromArgb(102, 126, 111);
-    private static readonly Color Disabled = Color.FromArgb(169, 180, 173);
-    private static readonly Color Green = Color.FromArgb(8, 122, 80);
-    private static readonly Color ExitInk = Color.FromArgb(143, 89, 79);
+    internal static Color Native(System.Windows.Media.Color color) => Color.FromArgb(color.A, color.R, color.G, color.B);
+    private Color Shade(string key) => Native(theme()[key]);
 
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var background = new SolidBrush(Color.White);
+        using var background = new SolidBrush(Shade("Surface"));
         e.Graphics.FillRectangle(background, new Rectangle(Point.Empty, e.ToolStrip.Size));
     }
 
@@ -102,13 +109,15 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
         var scale = strip.DeviceDpi / 96f;
         var inset = scale / 2;
         using var path = Rounded(new RectangleF(inset, inset, strip.Width - scale, strip.Height - scale), 10 * scale);
-        using var pen = new Pen(Color.FromArgb(220, 230, 223), scale);
+        using var pen = new Pen(Shade("Border"), scale);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.DrawPath(pen, path);
     }
 
     protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
     protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e) { }
+    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+    { e.ArrowColor = Shade("Muted"); base.OnRenderArrow(e); }
 
     protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
     {
@@ -116,7 +125,7 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
         var scale = (e.ToolStrip?.DeviceDpi ?? 96) / 96f;
         var exit = e.Item.Tag is TrayMenuGlyph.Exit;
         using var path = Rounded(new RectangleF(0, scale, e.Item.Width, e.Item.Height - 2 * scale), 6 * scale);
-        using var brush = new SolidBrush(exit ? Color.FromArgb(252, 242, 239) : Color.FromArgb(234, 245, 238));
+        using var brush = new SolidBrush(Shade(exit ? "DangerSoft" : "AccentSoft"));
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.FillPath(brush, path);
     }
@@ -124,7 +133,7 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
     {
         var scale = (e.ToolStrip?.DeviceDpi ?? 96) / 96f;
-        using var pen = new Pen(Color.FromArgb(235, 240, 237), scale);
+        using var pen = new Pen(Shade("Separator"), scale);
         e.Graphics.DrawLine(pen, 11 * scale, e.Item.Height / 2f, e.Item.Width - 11 * scale, e.Item.Height / 2f);
     }
 
@@ -134,24 +143,38 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
         var scale = (e.ToolStrip?.DeviceDpi ?? 96) / 96f;
         var glyph = item.Tag is TrayMenuGlyph value ? value : TrayMenuGlyph.Open;
         var toggle = glyph is TrayMenuGlyph.Quick or TrayMenuGlyph.Startup;
-        var color = !item.Enabled ? Disabled : glyph == TrayMenuGlyph.Exit ? ExitInk : item.Selected ? Green : Ink;
-        DrawGlyph(e.Graphics, glyph, 11 * scale, (item.Height - 16 * scale) / 2, scale,
-            !item.Enabled ? Disabled : item.Selected ? color : glyph == TrayMenuGlyph.Exit ? ExitInk : Muted);
+        var color = Shade(!item.Enabled ? "Disabled" : glyph == TrayMenuGlyph.Exit ? "Error" : item.Selected ? "AccentText" : "Text");
+        if (item.Tag is ThemePalette palette)
+        {
+            using var brush = new SolidBrush(Native(palette.Color));
+            using var outline = new Pen(Shade("Muted"), scale);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.FillEllipse(brush, 14 * scale, (item.Height - 10 * scale) / 2, 10 * scale, 10 * scale);
+            e.Graphics.DrawEllipse(outline, 14 * scale, (item.Height - 10 * scale) / 2, 10 * scale, 10 * scale);
+            if (item.Checked)
+            {
+                using var check = new Pen(Shade("AccentText"), 1.7f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+                var x = item.Width - 25 * scale; var y = item.Height / 2f;
+                e.Graphics.DrawLines(check, [new PointF(x, y), new(x + 3 * scale, y + 3 * scale), new(x + 9 * scale, y - 4 * scale)]);
+            }
+        }
+        else DrawGlyph(e.Graphics, glyph, 11 * scale, (item.Height - 16 * scale) / 2, scale,
+            !item.Enabled ? Shade("Disabled") : item.Selected ? color : Shade(glyph == TrayMenuGlyph.Exit ? "Error" : "Muted"));
         var text = Rectangle.Round(new RectangleF(38 * scale, 0, item.Width - (toggle ? 87 : 49) * scale, item.Height));
         TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont ?? item.Font, text, color,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         if (toggle) DrawSwitch(e.Graphics, new RectangleF(item.Width - 40 * scale, (item.Height - 16 * scale) / 2, 28 * scale, 16 * scale), item.Checked, item.Enabled, scale);
     }
 
-    private static void DrawSwitch(Graphics graphics, RectangleF bounds, bool enabled, bool available, float scale)
+    private void DrawSwitch(Graphics graphics, RectangleF bounds, bool enabled, bool available, float scale)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = Rounded(bounds, bounds.Height / 2);
-        using var track = new SolidBrush(enabled && available ? Green : Color.FromArgb(215, 225, 219));
+        using var track = new SolidBrush(Shade(enabled && available ? "Accent" : "Track"));
         graphics.FillPath(track, path);
         var diameter = bounds.Height - 4 * scale;
         var left = enabled ? bounds.Right - diameter - 2 * scale : bounds.Left + 2 * scale;
-        using var knob = new SolidBrush(Color.White);
+        using var knob = new SolidBrush(enabled && available ? Shade("OnAccent") : Color.White);
         graphics.FillEllipse(knob, left, bounds.Top + 2 * scale, diameter, diameter);
     }
 
@@ -185,6 +208,13 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
             case TrayMenuGlyph.Update:
                 graphics.DrawArc(pen, 2.5f, 2.5f, 11, 11, -75, 280);
                 graphics.DrawLines(pen, [new PointF(9, 1.5f), new(9, 5.5f), new(13, 5.5f)]);
+                break;
+            case TrayMenuGlyph.Theme:
+                graphics.DrawEllipse(pen, 1.5f, 1.5f, 13, 13);
+                graphics.DrawEllipse(pen, 4, 4, 1.5f, 1.5f);
+                graphics.DrawEllipse(pen, 9, 4, 1.5f, 1.5f);
+                graphics.DrawEllipse(pen, 4, 9, 1.5f, 1.5f);
+                graphics.DrawLine(pen, 9, 10, 12, 10);
                 break;
             case TrayMenuGlyph.Startup:
                 graphics.DrawArc(pen, 2.5f, 3, 11, 11, -45, 270);
