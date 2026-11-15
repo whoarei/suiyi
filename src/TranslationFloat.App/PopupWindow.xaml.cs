@@ -54,6 +54,7 @@ public partial class PopupWindow : Window
     public PopupWindow()
     {
         InitializeComponent();
+        (Application.Current as App)?.TrackThemeIcon(this);
         _platform = new WindowsInsertionPlatform(target => _target?.Id == target.Id);
         _insertion = new InsertionCoordinator(_platform);
         _translation = new TranslationController();

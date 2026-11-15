@@ -13,11 +13,13 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <!-- Release packaging overrides this with the version from its Git tag. -->
-    <Version Condition="'$(Version)' == ''">0.2.3</Version>
+    <Version Condition="'$(Version)' == ''">0.2.4</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TranslationFloat.Core/TranslationFloat.Core.csproj" />
     <Resource Include="Assets\Suiyi.ico" />
     <EmbeddedResource Include="Assets\Suiyi.Tray.ico" LogicalName="TranslationFloat.Assets.Suiyi.Tray.ico" />
+    <EmbeddedResource Include="Assets\Suiyi.svg" LogicalName="TranslationFloat.Assets.Suiyi.svg" />
+    <EmbeddedResource Include="Assets\Suiyi.Tray.svg" LogicalName="TranslationFloat.Assets.Suiyi.Tray.svg" />
   </ItemGroup>
 </Project>

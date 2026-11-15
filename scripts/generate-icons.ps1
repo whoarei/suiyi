@@ -24,7 +24,7 @@ function Render-Icon([xml]$svg, [int]$size) {
     foreach ($node in $svg.DocumentElement.ChildNodes) {
         if ($node.LocalName -in @('title', 'defs')) { continue }
         $fill = $node.GetAttribute('fill')
-        if ($fill -eq 'url(#jade)') {
+        if ($fill -eq 'url(#accent)') {
             $brush = [Windows.Media.LinearGradientBrush]::new()
             $brush.StartPoint = [Windows.Point]::new(0, 0)
             $brush.EndPoint = [Windows.Point]::new(1, 1)
@@ -107,19 +107,19 @@ foreach ($name in @('Suiyi.ico', 'Suiyi.Tray.ico')) {
 # Contact sheet includes native tray sizes on light and dark surfaces.
 $preview = [Windows.Media.DrawingVisual]::new()
 $drawing = $preview.RenderOpen()
-$drawing.DrawRectangle((New-Brush '#F7FAF8'), $null, [Windows.Rect]::new(0, 0, 720, 300))
-$drawing.DrawRectangle((New-Brush '#192C24'), $null, [Windows.Rect]::new(360, 0, 360, 300))
+$drawing.DrawRectangle((New-Brush '#F7F8FA'), $null, [Windows.Rect]::new(0, 0, 720, 300))
+$drawing.DrawRectangle((New-Brush '#222831'), $null, [Windows.Rect]::new(360, 0, 360, 300))
 function Draw-Label([string]$text, [double]$x, [double]$y, [int]$size, [string]$color) {
     $formatted = [Windows.Media.FormattedText]::new($text, [Globalization.CultureInfo]::InvariantCulture,
         [Windows.FlowDirection]::LeftToRight, [Windows.Media.Typeface]::new('Segoe UI'), $size, (New-Brush $color))
     $drawing.DrawText($formatted, [Windows.Point]::new($x, $y))
 }
-Draw-Label 'SUIYI' 30 22 18 '#23382B'
-Draw-Label 'SUIYI' 390 22 18 '#EAF8EF'
+Draw-Label 'SUIYI' 30 22 18 '#28312E'
+Draw-Label 'SUIYI' 390 22 18 '#EDF0F5'
 foreach ($x in @(28, 388)) {
     $drawing.DrawImage((Render-Icon $appSvg 144), [Windows.Rect]::new($x, 64, 144, 144))
     $drawing.DrawImage((Render-Icon $traySvg 72), [Windows.Rect]::new(($x + 190), 100, 72, 72))
-    $color = if ($x -eq 28) { '#62766A' } else { '#ABC6B6' }
+    $color = if ($x -eq 28) { '#68746F' } else { '#A5AFBC' }
     Draw-Label 'APP' ($x + 55) 212 10 $color
     Draw-Label 'TRAY' ($x + 214) 180 10 $color
     $position = $x + 12

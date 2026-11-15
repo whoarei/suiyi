@@ -26,6 +26,7 @@ public partial class UpdateWindow : Window
     public UpdateWindow(Func<bool>? canInstall = null)
     {
         InitializeComponent();
+        (Application.Current as App)?.TrackThemeIcon(this);
         _canInstall = canInstall ?? (() => true);
         var version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!ReleaseVersion.TryParse(version, out var current)) throw new InvalidOperationException("无法识别当前程序版本。");

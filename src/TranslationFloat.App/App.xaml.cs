@@ -10,7 +10,7 @@ public partial class App : Application
 {
     private Mutex? _mutex;
     private System.Windows.Forms.NotifyIcon? _tray;
-    private Icon? _trayIcon;
+    private ThemeIconController? _icons;
     private TrayMenu? _trayMenu;
     private PopupWindow? _popup;
     private StartupRegistration? _startup;
@@ -34,7 +34,10 @@ public partial class App : Application
         base.OnStartup(e);
         _mutex = new Mutex(true, "Local\\TranslationFloat.M0", out var created);
         if (!created) { Shutdown(); return; }
+        try { ShellIconIntegration.SetProcessIdentity(); }
+        catch (Exception error) { DiagnosticLog.Write("taskbar-identity", error.GetType().Name); }
         _theme = new ThemeManager(Resources);
+        _icons = new ThemeIconController(_theme, icon => { if (_tray is not null) _tray.Icon = icon; });
         _setupExit = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\Suiyi.ExitForSetup");
         _setupExitWait = ThreadPool.RegisterWaitForSingleObject(_setupExit, (_, _) => Dispatcher.BeginInvoke(() => Shutdown()), null, Timeout.Infinite, false);
         _popup = new PopupWindow { ShowInTaskbar = e.Args.Contains("--diagnostics") };
@@ -57,11 +60,10 @@ public partial class App : Application
         _startupItem = menu.AddAction("开机启动", TrayMenuGlyph.Startup, (_, _) => ToggleStartup());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.AddAction("退出", TrayMenuGlyph.Exit, (_, _) => Shutdown());
-        _trayIcon = LoadTrayIcon();
         _tray = new System.Windows.Forms.NotifyIcon
         {
             Text = TrayText,
-            Icon = _trayIcon,
+            Icon = _icons.TrayIcon,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -142,13 +144,7 @@ public partial class App : Application
         notice.Show();
     }
 
-    private static Icon LoadTrayIcon()
-    {
-        using var stream = typeof(App).Assembly.GetManifestResourceStream("TranslationFloat.Assets.Suiyi.Tray.ico")
-            ?? throw new InvalidOperationException("缺少随译托盘图标资源。");
-        using var icon = new Icon(stream, System.Windows.Forms.SystemInformation.SmallIconSize);
-        return (Icon)icon.Clone();
-    }
+    internal void TrackThemeIcon(Window window) => _icons?.Track(window);
 
     private void RefreshStartupItem()
     {
@@ -184,8 +180,8 @@ public partial class App : Application
         _updateWindow?.Close();
         _tray?.Dispose();
         _trayMenu?.Dispose();
+        _icons?.Dispose();
         _theme?.Dispose();
-        _trayIcon?.Dispose();
         _setupExitWait?.Unregister(null);
         _setupExit?.Dispose();
         _mutex?.Dispose();

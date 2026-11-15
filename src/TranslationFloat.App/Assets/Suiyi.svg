@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <title>Suiyi — translate into the cursor</title>
   <defs>
-    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#12A373"/>
-      <stop offset="1" stop-color="#087A50"/>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF9D87"/>
+      <stop offset="1" stop-color="#FF8067"/>
     </linearGradient>
   </defs>
-  <rect x="16" y="16" width="224" height="224" rx="56" fill="url(#jade)"/>
-  <path fill="#BDF4D8" d="M166 63 H200 V83 H193 V173 H200 V193 H166 V173 H173 V83 H166 Z"/>
-  <path fill="#FFFFFF" d="M66 69 H128 C134 69 139 74 139 80 C139 86 134 91 128 91 H66 C60 91 55 86 55 80 C55 74 60 69 66 69 Z"/>
-  <path fill="#FFFFFF" d="M66 165 H119 C125 165 130 170 130 176 C130 182 125 187 119 187 H66 C60 187 55 182 55 176 C55 170 60 165 66 165 Z"/>
-  <path fill="#FFFFFF" d="M66 117 H118 V99 L153 128 L118 157 V139 H66 C60 139 55 134 55 128 C55 122 60 117 66 117 Z"/>
+  <rect x="16" y="16" width="224" height="224" rx="56" fill="url(#accent)"/>
+  <path fill="#171717" d="M166 63 H200 V83 H193 V173 H200 V193 H166 V173 H173 V83 H166 Z"/>
+  <path fill="#171717" d="M66 69 H128 C134 69 139 74 139 80 C139 86 134 91 128 91 H66 C60 91 55 86 55 80 C55 74 60 69 66 69 Z"/>
+  <path fill="#171717" d="M66 165 H119 C125 165 130 170 130 176 C130 182 125 187 119 187 H66 C60 187 55 182 55 176 C55 170 60 165 66 165 Z"/>
+  <path fill="#171717" d="M66 117 H118 V99 L153 128 L118 157 V139 H66 C60 139 55 134 55 128 C55 122 60 117 66 117 Z"/>
 </svg>

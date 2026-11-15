@@ -30,6 +30,7 @@ public partial class SettingsWindow : Window
     {
         _store = store; _client = client; _save = save; _recording = recording; _hotKey = hotKey;
         InitializeComponent();
+        (Application.Current as App)?.TrackThemeIcon(this);
         AddressBox.Text = current.BaseUrl;
         ModelBox.Text = current.Model;
         ShortcutBox.Text = hotKey.DisplayName;

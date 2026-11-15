@@ -53,3 +53,4 @@ StartupChecks.Run();
 PreferenceChecks.Run();
 KeyVisibilityChecks.Run();
 ThemeChecks.Run(args is ["--theme-preview", var previewDirectory] ? previewDirectory : null);
+IconChecks.Run();

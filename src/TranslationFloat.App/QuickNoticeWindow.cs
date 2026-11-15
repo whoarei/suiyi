@@ -35,6 +35,7 @@ internal sealed class QuickNoticeWindow : Window
         surface.SetResourceReference(Border.BackgroundProperty, "Theme.Notice");
         surface.SetResourceReference(Border.BorderBrushProperty, "Theme.AccentBorder");
         ((TextBlock)surface.Child).SetResourceReference(TextBlock.ForegroundProperty, "Theme.OnNotice");
+        (Application.Current as App)?.TrackThemeIcon(this);
         SourceInitialized += (_, _) =>
         {
             var handle = new WindowInteropHelper(this).Handle;

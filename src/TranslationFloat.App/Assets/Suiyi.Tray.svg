@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
   <title>Suiyi — translate into the cursor, small size mark</title>
-  <rect x="0" y="0" width="16" height="16" rx="4" fill="#087A50"/>
-  <path fill="#FFFFFF" d="M10.5 3 H13 V4.5 H12.5 V11.5 H13 V13 H10.5 V11.5 H11 V4.5 H10.5 Z"/>
-  <path fill="#FFFFFF" d="M3.5 4 H8 V5.5 H3.5 Z M3.5 10.5 H7.5 V12 H3.5 Z M3.5 7.2 H7 V5.9 L9.5 8 L7 10.1 V8.8 H3.5 Z"/>
+  <rect x="0" y="0" width="16" height="16" rx="4" fill="#FF8067"/>
+  <path fill="#171717" d="M10.5 3 H13 V4.5 H12.5 V11.5 H13 V13 H10.5 V11.5 H11 V4.5 H10.5 Z"/>
+  <path fill="#171717" d="M3.5 4 H8 V5.5 H3.5 Z M3.5 10.5 H7.5 V12 H3.5 Z M3.5 7.2 H7 V5.9 L9.5 8 L7 10.1 V8.8 H3.5 Z"/>
 </svg>
