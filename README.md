@@ -27,4 +27,4 @@
 - **本机加密**：密钥按 API 地址分别保存，使用当前 Windows 用户加密。
 - **安装与更新**：提供安装包和便携版，支持程序内下载并安装更新。
 
-[下载 Windows 版](https://github.com/whoarei/suiyi/releases/latest) · [使用与配置](docs/reference.md) · [安装与升级](docs/installation.md) · [支持范围](docs/compatibility.md)
+[下载 Windows 版](https://github.com/whoarei/suiyi/releases/latest) · [使用与配置](docs/reference.md) · [安装与升级](docs/installation.md) · [支持范围](docs/compatibility.md) · [技术方案](docs/technical-design.md)

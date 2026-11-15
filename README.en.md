@@ -27,4 +27,4 @@ Suiyi brings Chinese-to-English translation to your Windows input fields. Enable
 - **Local encryption**: API keys are encrypted for your Windows user and stored separately for each API endpoint.
 - **Install and update**: installer and portable builds, with in-app updates.
 
-[Download for Windows](https://github.com/whoarei/suiyi/releases/latest) · [User guide (Chinese)](docs/reference.md) · [Install and update (Chinese)](docs/installation.md) · [Compatibility (Chinese)](docs/compatibility.md)
+[Download for Windows](https://github.com/whoarei/suiyi/releases/latest) · [User guide (Chinese)](docs/reference.md) · [Install and update (Chinese)](docs/installation.md) · [Compatibility (Chinese)](docs/compatibility.md) · [Technical design (Chinese)](docs/technical-design.md)

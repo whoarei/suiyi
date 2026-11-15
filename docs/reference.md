@@ -1,6 +1,6 @@
 # 使用与开发参考
 
-[软件简介](../README.md) · [安装与升级](installation.md)
+[软件简介](../README.md) · [安装与升级](installation.md) · [技术方案](technical-design.md)
 
 开发命令均从仓库根目录执行。
 
