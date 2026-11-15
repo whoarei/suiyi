@@ -8,6 +8,7 @@ const view = new URLSearchParams(location.search).get('view') || 'main';
 const root = document.querySelector('#app');
 const $ = (id) => document.getElementById(id);
 const paths = {
+  language: '<path d="M3 5h12M9 3v2M5 8c1 5 4 8 8 10M13 5c-1 6-5 11-10 13M14 21l4-10 4 10m-6-4h4"/>', back: '<path d="M19 12H5m7-7-7 7 7 7"/>', chevron: '<path d="m9 5 7 7-7 7"/>',
   close: '<path d="m5 5 14 14M19 5 5 19"/>', copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
   settings: '<path d="m9 3-1 3-3 1 1 3-2 2 2 3-1 2 3 1 1 3h6l1-3 3-1-1-2 2-3-2-2 1-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',
   eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
@@ -118,18 +119,58 @@ if (view === 'main') {
   $('save').onclick = async () => { if (waiting || recording) return; try { await invoke('save_settings', { input: input() }); $('key').value = ''; masked(); await hide(); } catch (error) { status(String(error), true); } };
   window.addEventListener('blur', masked);
   await listen('settings-open', load);
+  await listen('config-changed', ({ payload }) => { if (payload?.targetLanguage) $('target-language').value = payload.targetLanguage; });
   await listen('settings-closed', () => { $('key').value = ''; origin = null; masked(); });
   wireFrame(); $('close').addEventListener('click', () => { $('key').value = ''; origin = null; masked(); });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { $('key').value = ''; masked(); } });
   await load();
 } else if (view === 'menu') {
-  root.innerHTML = `<section class="panel menu"><button class="item" data-action="open">${icon('open')}打开随译</button><button class="item" data-action="settings">${icon('settings')}设置</button><button class="item" data-action="update">${icon('update')}检查更新</button><button class="item" id="themes-toggle">${icon('theme')}主题<span class="trailing" id="theme-name"></span></button><div class="themes" id="themes" hidden><div class="theme-grid" id="theme-grid"></div></div><hr><button class="item" data-action="quick">${icon('quick')}快速模式<input class="switch trailing" id="quick-state" type="checkbox" tabindex="-1" aria-label="快速模式状态"></button><button class="item" data-action="startup">${icon('startup')}开机启动<input class="switch trailing" id="startup-state" type="checkbox" tabindex="-1" aria-label="开机启动状态"></button><hr><button class="item" data-action="exit">${icon('exit')}退出</button></section>`;
-  async function render() { const data = await boot(); $('quick-state').checked = data.preferences.quickMode; $('startup-state').checked = data.preferences.autoStart; $('theme-name').textContent = t(data.palettes.find((p) => p[0] === data.preferences.theme)?.[1] || '橙色'); const grid = $('theme-grid'); grid.replaceChildren(); for (const [id, name, color] of data.palettes) { const button = document.createElement('button'); button.className = `swatch${id === data.preferences.theme ? ' selected' : ''}`; button.style.setProperty('--swatch', color); button.title = t(name); button.setAttribute('aria-label', t(name)); button.onclick = () => invoke('action', { name: 'theme', value: id }); grid.append(button); } fit(); }
-  document.querySelectorAll('[data-action]').forEach((button) => button.onclick = () => invoke('action', { name: button.dataset.action }).catch((error) => { console.warn('操作未完成'); }));
+  root.innerHTML = `<section class="panel menu"><div id="menu-home"><button class="item" data-action="open">${icon('open')}打开随译</button><button class="item" data-action="settings">${icon('settings')}设置</button><button class="item" data-action="update">${icon('update')}检查更新</button><button class="item" id="languages-toggle" aria-controls="language-page" aria-expanded="false">${icon('language')}<span class="language-summary"><span class="language-caption">目标语言</span><span id="language-name"></span></span><span class="trailing">${icon('chevron')}</span></button><button class="item" id="themes-toggle">${icon('theme')}主题<span class="trailing" id="theme-name"></span></button><div class="themes" id="themes" hidden><div class="theme-grid" id="theme-grid"></div></div><hr><button class="item" data-action="quick">${icon('quick')}快速模式<input class="switch trailing" id="quick-state" type="checkbox" tabindex="-1" aria-label="快速模式状态"></button><button class="item" data-action="startup">${icon('startup')}开机启动<input class="switch trailing" id="startup-state" type="checkbox" tabindex="-1" aria-label="开机启动状态"></button><hr><button class="item" data-action="exit">${icon('exit')}退出</button></div><div id="language-page" hidden><div class="language-header">${icon('back', '返回', 'language-back')}<strong>目标语言</strong></div><div id="language-grid" class="language-grid" role="group" aria-label="目标语言"></div><p id="language-status" class="status error" role="status"></p></div></section>`;
+  let languagePending = false;
+  function showHome(focus = true) {
+    $('language-page').hidden = true; $('menu-home').hidden = false;
+    $('languages-toggle').setAttribute('aria-expanded', 'false');
+    if (focus) $('languages-toggle').focus(); fit();
+  }
+  async function selectLanguage(targetLanguage) {
+    if (languagePending) return;
+    languagePending = true; $('language-status').textContent = '';
+    $('language-grid').querySelectorAll('button').forEach(button => button.disabled = true);
+    try { await invoke('set_target_language', { targetLanguage }); }
+    catch (error) { $('language-status').textContent = t(String(error)); }
+    finally { languagePending = false; $('language-grid').querySelectorAll('button').forEach(button => button.disabled = false); fit(); }
+  }
+  async function render() {
+    const data = await boot();
+    $('quick-state').checked = data.preferences.quickMode; $('startup-state').checked = data.preferences.autoStart;
+    $('theme-name').textContent = t(data.palettes.find(p => p[0] === data.preferences.theme)?.[1] || '橙色');
+    const grid = $('theme-grid'); grid.replaceChildren();
+    for (const [id, name, color] of data.palettes) {
+      const button = document.createElement('button'); button.className = `swatch${id === data.preferences.theme ? ' selected' : ''}`;
+      button.style.setProperty('--swatch', color); button.title = t(name); button.setAttribute('aria-label', t(name));
+      button.onclick = () => invoke('action', { name: 'theme', value: id }); grid.append(button);
+    }
+    const current = data.config.targetLanguage || 'en';
+    $('language-name').textContent = t(data.languages.find(language => language.code === current)?.name || '英语');
+    const list = $('language-grid'); list.replaceChildren();
+    for (const { code, name } of data.languages) {
+      const button = document.createElement('button'); button.className = `language-option${code === current ? ' selected' : ''}`;
+      button.textContent = t(name); button.dataset.language = code; button.setAttribute('aria-pressed', String(code === current));
+      button.disabled = languagePending; button.onclick = () => selectLanguage(code); list.append(button);
+    }
+    fit();
+  }
+  document.querySelectorAll('[data-action]').forEach(button => button.onclick = () => invoke('action', { name: button.dataset.action }).catch(() => console.warn('操作未完成')));
   $('themes-toggle').onclick = () => { $('themes').hidden = !$('themes').hidden; fit(); };
-  await listen('menu-open', () => { $('themes').hidden = true; render(); });
-  await listen('preferences-changed', render); await render();
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hide(); });
+  $('languages-toggle').onclick = async () => {
+    $('themes').hidden = true; $('language-status').textContent = '';
+    $('menu-home').hidden = true; $('language-page').hidden = false; $('languages-toggle').setAttribute('aria-expanded', 'true');
+    await render(); $('language-grid').querySelector('[aria-pressed="true"]')?.focus(); fit();
+  };
+  $('language-back').onclick = () => showHome();
+  await listen('menu-open', () => { showHome(false); $('themes').hidden = true; $('language-status').textContent = ''; render(); });
+  await listen('preferences-changed', render); await listen('config-changed', render); await render();
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); if (!$('language-page').hidden) showHome(); else hide(); } });
 } else if (view === 'notice') {
   root.innerHTML = '<section class="panel notice"><span class="dot"></span><p id="notice-text"></p></section>';
   await listen('notice', (event) => { $('notice-text').textContent = t(event.payload); fit(); });

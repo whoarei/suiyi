@@ -594,6 +594,40 @@ pub fn insert(
 }
 pub fn placement(width: i32, height: i32) -> (i32, i32) {
     unsafe {
+        let scale = GetDpiForWindow(GetForegroundWindow()).max(96) as f64 / 96.;
+        placement_physical(
+            (width as f64 * scale) as i32,
+            (height as f64 * scale) as i32,
+        )
+    }
+}
+fn constrain_position(x: i32, y: i32, width: i32, height: i32, work: Rect) -> (i32, i32) {
+    (
+        x.clamp(work.left, work.right.saturating_sub(width).max(work.left)),
+        y.clamp(work.top, work.bottom.saturating_sub(height).max(work.top)),
+    )
+}
+pub fn keep_on_screen(x: i32, y: i32, width: u32, height: u32) -> (i32, i32) {
+    unsafe {
+        let monitor = MonitorFromPoint(Point { x, y }, 2);
+        let mut info = MonitorInfo {
+            size: size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return (x, y);
+        }
+        constrain_position(
+            x,
+            y,
+            width.min(i32::MAX as u32) as i32,
+            height.min(i32::MAX as u32) as i32,
+            info.work,
+        )
+    }
+}
+pub fn placement_physical(width: i32, height: i32) -> (i32, i32) {
+    unsafe {
         let mut cursor = Point::default();
         GetCursorPos(&mut cursor);
         let monitor = MonitorFromPoint(cursor, 2);
@@ -602,15 +636,7 @@ pub fn placement(width: i32, height: i32) -> (i32, i32) {
             ..Default::default()
         };
         GetMonitorInfoW(monitor, &mut info);
-        let scale = GetDpiForWindow(GetForegroundWindow()).max(96) as f64 / 96.;
-        let (w, h) = (
-            (width as f64 * scale) as i32,
-            (height as f64 * scale) as i32,
-        );
-        (
-            (cursor.x + 14).clamp(info.work.left, (info.work.right - w).max(info.work.left)),
-            (cursor.y + 14).clamp(info.work.top, (info.work.bottom - h).max(info.work.top)),
-        )
+        constrain_position(cursor.x + 14, cursor.y + 14, width, height, info.work)
     }
 }
 
@@ -1023,6 +1049,19 @@ fn same_local_executable(target: &Path, exe: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn menu_growth_stays_inside_negative_coordinate_monitor_work_area() {
+        let work = Rect {
+            left: -1920,
+            top: 0,
+            right: 0,
+            bottom: 1040,
+        };
+        assert_eq!(constrain_position(-200, 900, 244, 380, work), (-244, 660));
+        assert_eq!(constrain_position(-2100, -100, 244, 380, work), (-1920, 0));
+        assert_eq!(constrain_position(-1500, 200, 244, 380, work), (-1500, 200));
+        assert_eq!(constrain_position(-200, 900, 3000, 1200, work), (-1920, 0));
+    }
     #[test]
     fn native_layout() {
         assert_eq!(size_of::<Input>(), 40);

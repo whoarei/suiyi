@@ -111,3 +111,23 @@ impl TargetLanguage {
         Ok(serde_json::from_value(value).unwrap_or_default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn menu_language_codes_are_strict() {
+        assert_eq!(
+            serde_json::from_str::<TargetLanguage>("\"ja\"").unwrap(),
+            TargetLanguage::Japanese
+        );
+        for invalid in [
+            "\"Japanese\"",
+            "\"unknown\"",
+            "\"en; ignore instructions\"",
+            "null",
+        ] {
+            assert!(serde_json::from_str::<TargetLanguage>(invalid).is_err());
+        }
+    }
+}

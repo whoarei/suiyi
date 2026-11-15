@@ -71,6 +71,16 @@ fn cancel_normal(state: &Runtime, invalidate: bool) {
         state.ready.store(false, Ordering::SeqCst)
     }
 }
+fn config_changed(app: &AppHandle, state: &Runtime) {
+    cancel_normal(state, true);
+    {
+        let mut cache = state.cache.lock().unwrap();
+        cache.values.clear();
+        cache.order.clear();
+    }
+    let target = state.config.lock().unwrap().target_language;
+    let _ = app.emit("config-changed", json!({"targetLanguage": target}));
+}
 fn provider(state: &Runtime, address: &str, model: &str, key: &str) -> Result<Provider, String> {
     Provider::new(
         state.client.clone(),
@@ -111,11 +121,14 @@ fn refresh_tray_text(app: &AppHandle) {
 fn show(app: &AppHandle, label: &str, near_cursor: bool) {
     if let Some(window) = app.get_webview_window(label) {
         if near_cursor {
-            let (w, h) = match label {
-                "menu" => (244, 322),
-                _ => (440, 330),
+            let (x, y) = if label == "menu" {
+                let size = window
+                    .outer_size()
+                    .unwrap_or(tauri::PhysicalSize::new(244, 322));
+                native::placement_physical(size.width as i32, size.height as i32)
+            } else {
+                native::placement(440, 330)
             };
-            let (x, y) = native::placement(w, h);
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
         let _ = window.show();
@@ -539,15 +552,45 @@ fn save_settings(
         }
         return result;
     }
-    cancel_normal(&state, true);
-    {
-        let mut cache = state.cache.lock().unwrap();
-        cache.values.clear();
-        cache.order.clear();
-    }
-    let _ = app.emit("config-changed", ());
+    config_changed(&app, &state);
     refresh_tray_text(&app);
     Ok(())
+}
+#[tauri::command]
+fn set_target_language(
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<Runtime>,
+    target_language: TargetLanguage,
+) -> Result<(), String> {
+    role(&window, &["menu"])?;
+    if state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("正在翻译或回填，请稍后切换目标语言。".into());
+    }
+    let result = (|| {
+        let mut config = state.config.lock().unwrap();
+        if config.target_language == target_language {
+            return Ok(());
+        }
+        *config = state.store.save_target_language(&config, target_language)?;
+        drop(config);
+        // Stop settings tests that still use the previous target, retaining the draft fields.
+        let mut pending = state.settings_cancel.lock().unwrap();
+        pending.cancel();
+        *pending = CancellationToken::new();
+        drop(pending);
+        config_changed(&app, &state);
+        Ok(())
+    })();
+    state.busy.store(false, Ordering::SeqCst);
+    if result.is_ok() {
+        let _ = window.hide();
+    }
+    result
 }
 #[tauri::command]
 fn reveal_key(
@@ -841,6 +884,7 @@ pub fn run() {
             cancel_translation,
             output,
             save_settings,
+            set_target_language,
             reveal_key,
             record_shortcut,
             models,
@@ -890,6 +934,21 @@ pub fn run() {
                 let handle = app.handle().clone();
                 let label = label.to_string();
                 window.on_window_event(move |event| match event {
+                    WindowEvent::Resized(_) if label == "menu" => {
+                        if let Some(w) = handle.get_webview_window("menu")
+                            && let (Ok(position), Ok(size)) = (w.outer_position(), w.outer_size())
+                        {
+                            let (x, y) = native::keep_on_screen(
+                                position.x,
+                                position.y,
+                                size.width,
+                                size.height,
+                            );
+                            if x != position.x || y != position.y {
+                                let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+                            }
+                        }
+                    }
                     WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         let _ = hide_impl(&handle, &label);

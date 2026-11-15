@@ -185,6 +185,19 @@ impl Store {
         self.root
             .join(format!("api-{:x}.key", Sha256::digest(address.as_bytes())))
     }
+    pub fn save_target_language(
+        &self,
+        config: &Config,
+        target_language: TargetLanguage,
+    ) -> Result<Config, String> {
+        let next = Config {
+            version: 2,
+            target_language,
+            ..config.clone()
+        };
+        self.atomic("settings.json", &serde_json::to_vec(&next).unwrap())?;
+        Ok(next)
+    }
     pub fn atomic(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
         fs::create_dir_all(&self.root).map_err(|_| "无法创建用户配置目录。")?;
         let path = self.root.join(name);
@@ -385,6 +398,35 @@ pub fn isolated_test_store() -> Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tray_language_switch_preserves_endpoint_model_and_encrypted_key() {
+        let s = isolated_test_store();
+        let original = s
+            .save_config(
+                "https://one.example/v1",
+                "model:1",
+                "fake-test-key",
+                TargetLanguage::English,
+            )
+            .unwrap();
+        let key_path = s.key_path(&original.base_url);
+        let encrypted = fs::read(&key_path).unwrap();
+        let next = s
+            .save_target_language(&original, TargetLanguage::Arabic)
+            .unwrap();
+        assert_eq!(next.base_url, original.base_url);
+        assert_eq!(next.model, original.model);
+        assert_eq!(s.config().target_language, TargetLanguage::Arabic);
+        assert_eq!(fs::read(key_path).unwrap(), encrypted);
+        assert_eq!(
+            s.credential(&original.base_url, "").unwrap(),
+            "fake-test-key"
+        );
+        s.save_target_language(&Config::default(), TargetLanguage::Japanese)
+            .unwrap();
+        assert_eq!(s.config().target_language, TargetLanguage::Japanese);
+        fs::remove_dir_all(s.root).unwrap();
+    }
     #[test]
     fn target_language_round_trip_and_legacy_default() {
         let s = isolated_test_store();
