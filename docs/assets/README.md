@@ -21,3 +21,13 @@ powershell.exe -NoProfile -STA -File scripts/generate-icons.ps1
 脚本读取 SVG 源稿，使用 Windows 自带的 WPF 渲染，不依赖字体、外部服务或下载的图标库；同时用 Windows 图像解码器校验 ICO 帧。生成的 ICO 和 PNG 直接入库，普通构建无需重新绘图。
 
 应用 ICO 写入可执行文件并用作 WPF 窗口图标；托盘 ICO 作为独立资源嵌入程序集，按系统小图标尺寸选帧，并在退出时释放。便携包无需附带松散的图标文件。
+
+## 快速替换动图
+
+`quick-replace.gif` 用于软件首页，展示选中中文、按下快捷键、原位替换为英文的快速模式体验，前后的称呼与署名保持不变。此为绘制的流程示意，包含 108 帧，循环时长 7.2 秒。
+
+图形使用 WPF 绘制，以 FFmpeg 编码为 GIF。重新生成需要 Windows 和可用的 `ffmpeg` 命令：
+
+```powershell
+powershell.exe -NoProfile -STA -File scripts/generate-readme-demo.ps1
+```
