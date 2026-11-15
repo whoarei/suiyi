@@ -9,3 +9,6 @@ artifacts/
 !.env.example
 *.key
 *.log
+node_modules/
+src-tauri/target/
+src-tauri/gen/

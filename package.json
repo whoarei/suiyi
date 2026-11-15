@@ -1,0 +1,12 @@
+{
+  "name": "suiyi",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "check": "node --test ui/tests/*.test.js && cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": { "@tauri-apps/cli": "2.12.4" }
+}

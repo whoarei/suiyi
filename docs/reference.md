@@ -6,7 +6,7 @@
 
 ## 运行
 
-推荐下载 [Release](https://github.com/whoarei/suiyi/releases) 中的 Windows x64 安装包 `suiyi-X.Y.Z-windows-x64-setup.exe`。默认安装到当前用户的 `%LOCALAPPDATA%\Programs\Suiyi`，无需管理员权限，提供开始菜单与卸载入口。便携包仍可解压运行，开发构建运行 `artifacts\TranslationFloat\TranslationFloat.exe`，程序常驻托盘。
+推荐下载 [Release](https://github.com/whoarei/suiyi/releases) 中的 Windows x64 安装包 `suiyi-X.Y.Z-windows-x64-setup.exe`。默认安装到当前用户的 `%LOCALAPPDATA%\Programs\Suiyi`，无需管理员权限，提供开始菜单与卸载入口。v0.3.0 起复用 WebView2，安装器只在缺少时自动下载并安装，不再携带 .NET。便携版也需要 WebView2。开发构建运行 `artifacts\Tauri\TranslationFloat.exe`，程序常驻托盘。
 
 1. 首次使用，从托盘菜单打开“设置”，填写 API 地址、Key 和模型，点击“测试”后保存。模型可点击右侧下载图标获取后选择，也可手填；无鉴权的本地接口可留空 Key。
 2. 在准备填写的输入框中放好光标，按 `Ctrl+Alt+T`。
@@ -74,10 +74,10 @@ API 地址填写根路径，例如 `https://example.com/v1`；支持已有路径
 
 ## 构建与检查
 
-需要 Windows x64 和 .NET SDK 10.0.404。此工作区的 SDK 保存在 `.tools\dotnet`，没有修改系统 PATH。
+需要 Windows x64、MSVC C++ 构建工具、Rust 1.95.0 和 Node.js。工具链由 `rust-toolchain.toml` 固定，Tauri CLI 与依赖由锁文件固定。安装器隔离测试另需要 `global.json` 指定的 .NET SDK 10.0.404，用于开发测试夹具；产品不依赖 .NET。
 
 ```powershell
-# 运行回填、翻译协议、调度、原生输入和密钥保存检查，生成自包含运行目录
+# 运行前端与 Rust 检查，构建原生 EXE
 .\scripts\build.ps1
 
 # 启动到托盘
@@ -93,11 +93,11 @@ API 地址填写根路径，例如 `https://example.com/v1`；支持已有路径
 .\scripts\run.ps1 -CheckUpdates
 ```
 
-自包含目录内的文件需要一起复制。可选 `build.ps1 -FrameworkDependent` 生成依赖已安装 .NET 10 Desktop Runtime 的版本，输出到单独目录。
+Tauri 发布目录只包含 `TranslationFloat.exe` 和使用说明；HTML/CSS/JavaScript 嵌入 EXE，Node.js 只在开发时使用，不随软件安装。旧 WPF 的 `-FrameworkDependent` 选项已移除。
 
 ## 自动发布 Windows 安装包与便携版
 
-推送 `vX.Y.Z` 格式的 tag 后，[GitHub Actions](https://github.com/whoarei/suiyi/actions/workflows/release.yml) 自动运行检查、构建 Windows x64 自包含安装包和便携包，并验证隔离的安装、覆盖升级及卸载流程，再发布到对应的 [Release](https://github.com/whoarei/suiyi/releases)。例如：
+推送 `vX.Y.Z` 格式的 tag 后，[GitHub Actions](https://github.com/whoarei/suiyi/actions/workflows/release.yml) 自动运行前端与 Rust 检查、构建 Windows x64 安装包和便携包，并验证隔离的安装、覆盖升级及卸载流程，再发布到对应的 [Release](https://github.com/whoarei/suiyi/releases)。例如：
 
 ```powershell
 git tag -a v0.1.0 -m "随译 v0.1.0"
@@ -114,7 +114,7 @@ Release 包含 `suiyi-X.Y.Z-windows-x64-setup.exe`、`suiyi-X.Y.Z-windows-x64-po
 .\scripts\package.ps1 -Version 0.1.0
 ```
 
-自动检查共 187 项，不调用真实翻译服务，也不读取生产密钥；原生检查不向桌面发送输入。更新检查使用 HTTP 替身覆盖版本排序、正式版筛选、官方链接、下载摘要、重定向、网络错误、限流、取消及响应大小。开机启动和界面偏好检查使用隔离的测试注册表分支，不修改真实启动项或快捷键偏好。密钥可见性检查使用隐藏的设置控件、临时目录与虚构密钥。安装器另用 `scripts/test-installer.ps1 -AppDirectory <自包含目录>` 验证安装、持锁升级和卸载，使用独立 AppId、互斥量、事件、目录及虚构配置。真实翻译联调另使用用户在本机保存的凭据，验证接口翻译及跨应用回填。微信测试文字保留在文件传输助手的草稿框，未点击发送；浏览器测试页没有提交功能。
+当前检查使用前端状态测试、Rust 单元测试和真实本地 HTTP 替身，覆盖协议、取消、旧响应、模型分页、加密配置、主题与原生基础行为，不调用真实翻译服务或读取生产密钥。安装器另用 `scripts/test-installer.ps1 -AppDirectory <Tauri发布目录>` 验证安装、持锁升级、旧运行时清理及卸载；WebView2 路由使用隔离替身。GUI 联调使用 `--test-profile <绝对目录>` 和本地假服务隔离配置。原 WPF 的 187 项检查及微信、浏览器实测作为历史记录保留，不能等同于 Tauri 版通过情况；新记录见 [支持范围](compatibility.md)。
 
 诊断日志位于 `%LOCALAPPDATA%\TranslationFloat\m0.log`，仅记录操作阶段、结果、进程名和窗口句柄，不记录输入文本或聊天内容。
 

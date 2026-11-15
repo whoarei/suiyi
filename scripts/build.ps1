@@ -1,26 +1,30 @@
-param([switch]$FrameworkDependent, [string]$Version, [string]$OutputDirectory)
+param([string]$Version, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$dotnetPath = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
-if (-not (Test-Path -LiteralPath $dotnetPath)) { $dotnetPath = (Get-Command dotnet -ErrorAction Stop).Source }
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$env:DOTNET_NOLOGO = '1'
-$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
 Push-Location $projectRoot
 try {
-    & $dotnetPath run --project 'tests\TranslationFloat.Core.Tests\TranslationFloat.Core.Tests.csproj' -c Release
-    if ($LASTEXITCODE -ne 0) { throw '回填逻辑检查失败。' }
-    & $dotnetPath run --project 'tests\TranslationFloat.Translation.Tests\TranslationFloat.Translation.Tests.csproj' -c Release
-    if ($LASTEXITCODE -ne 0) { throw '翻译协议或调度检查失败。' }
-    & $dotnetPath run --project 'tests\TranslationFloat.Native.Tests\TranslationFloat.Native.Tests.csproj' -c Release
-    if ($LASTEXITCODE -ne 0) { throw '原生输入结构检查失败。' }
-    $outputName = if ($FrameworkDependent) { 'TranslationFloat-framework-dependent' } else { 'TranslationFloat' }
-    $outputPath = if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot ('artifacts\' + $outputName) }
-    $selfContained = if ($FrameworkDependent) { 'false' } else { 'true' }
-    $versionArguments = @()
-    if ($Version) { $versionArguments += "-p:Version=$Version" }
-    & $dotnetPath publish 'src\TranslationFloat.App\TranslationFloat.App.csproj' -c Release -r win-x64 --self-contained $selfContained -o $outputPath --nologo @versionArguments
-    if ($LASTEXITCODE -ne 0) { throw '发布文件生成失败。' }
+    if (-not (Test-Path -LiteralPath 'node_modules/@tauri-apps/cli')) {
+        npm ci --ignore-scripts
+        if ($LASTEXITCODE -ne 0) { throw 'Tauri CLI 安装失败。' }
+    }
+    npm run check
+    if ($LASTEXITCODE -ne 0) { throw 'Tauri 检查失败。' }
+    $arguments = @('build','--no-bundle')
+    $env:SUIYI_BUILD_VERSION = if ($Version) { $Version } else { (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version }
+    if ($Version) {
+        $configPath = Join-Path $projectRoot ('artifacts\tauri-version-' + [Guid]::NewGuid().ToString('N') + '.json')
+        New-Item -ItemType Directory -Path (Split-Path -Parent $configPath) -Force | Out-Null
+        [IO.File]::WriteAllText($configPath, (@{version=$Version} | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+        $arguments += @('--config', $configPath)
+    }
+    & node_modules/.bin/tauri.cmd @arguments
+    if ($LASTEXITCODE -ne 0) { throw 'Tauri 构建失败。' }
+    $outputPath = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'artifacts\Tauri' }
+    if ((Test-Path -LiteralPath $outputPath) -and @(Get-ChildItem -LiteralPath $outputPath -Recurse -Force | Where-Object { $_.Name -notin @('TranslationFloat.exe','使用说明.txt') }).Count -ne 0) {
+        throw '输出目录含其他文件。请使用新的空目录，避免将旧 WPF 运行时混入 Tauri 发布包。'
+    }
+    New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
+    Copy-Item -LiteralPath 'src-tauri/target/release/TranslationFloat.exe' -Destination $outputPath
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\quickstart.txt') -Destination (Join-Path $outputPath '使用说明.txt') -Force
     Write-Output "程序：$outputPath\TranslationFloat.exe"
 }

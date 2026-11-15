@@ -58,6 +58,6 @@ Esc 收起并保留草稿；输入法选词期间的 Esc 先取消选词。
 
 已验证：Windows 11 x64，WPF 编辑框、Edge 网页多行及富文本输入框。
 此前完整翻译联调：微信 4.2.0.13 文件传输助手。其他应用需逐步验证。
-此目录包含 .NET 运行时，所有文件需要一起保留。
+v0.3.0 起使用 Tauri + Rust，不再携带 .NET。程序复用 WebView2 Runtime；安装版会在缺少时自动从微软下载并安装。便携版如无法启动，请先运行安装包或手动安装微软 WebView2 Runtime。
 设置目录：%LOCALAPPDATA%\TranslationFloat\
 诊断日志 m0.log 不记录原文、译文、密钥或聊天内容。

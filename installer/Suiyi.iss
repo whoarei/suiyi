@@ -53,6 +53,11 @@ Name: "zhcn"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 [Files]
 Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+#ifdef TauriBuild
+[InstallDelete]
+#include "legacy-wpf-files.iss"
+#endif
+
 #ifndef SmokeTest
 [Icons]
 Name: "{userprograms}\随译"; Filename: "{app}\TranslationFloat.exe"; AppUserModelID: "Suiyi.Desktop"
@@ -65,6 +70,62 @@ Filename: "{app}\TranslationFloat.exe"; Flags: nowait; Check: IsUpdateInstall
 [Code]
 var
   InstallCompleted: Boolean;
+
+#ifdef TauriBuild
+const
+  WebViewClientKey = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+
+function HasWebView2: Boolean;
+var
+  Version: String;
+begin
+#ifdef SmokeTest
+  Result := RegQueryStringValue(HKCU, '{#WebViewProbeKey}', 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0');
+#else
+  Result := (RegQueryStringValue(HKLM32, WebViewClientKey, 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0')) or
+    (RegQueryStringValue(HKCU, WebViewClientKey, 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0'));
+#endif
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Bootstrapper, QuotedBootstrapper, Script, Parameters: String;
+  ExitCode: Integer;
+  InstallCount: Cardinal;
+begin
+  Result := '';
+  if HasWebView2 then begin
+    Log('WebView2 Runtime detected; no download required.');
+    exit;
+  end;
+#ifdef SmokeTest
+  { Only this test's fake registry key changes; no network or system installation. }
+  RegQueryDWordValue(HKCU, '{#WebViewProbeKey}', 'InstallCount', InstallCount);
+  RegWriteDWordValue(HKCU, '{#WebViewProbeKey}', 'InstallCount', InstallCount + 1);
+  RegWriteStringValue(HKCU, '{#WebViewProbeKey}', 'pv', '157.0.0.0');
+  Log('TEST: installed missing WebView2 fixture.');
+  if not HasWebView2 then Result := 'WebView2 测试替身安装失败。';
+#else
+  try
+    WizardForm.PreparingLabel.Caption := '正在下载并安装 Microsoft WebView2 Runtime…';
+    DownloadTemporaryFile('https://go.microsoft.com/fwlink/p/?LinkId=2124703', 'MicrosoftEdgeWebview2Setup.exe', '', nil);
+    Bootstrapper := ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe');
+    QuotedBootstrapper := Bootstrapper;
+    StringChangeEx(QuotedBootstrapper, '''', '''''', True);
+    Script := '$s=Get-AuthenticodeSignature -LiteralPath ''' + QuotedBootstrapper + '''; if($s.Status -eq ''Valid'' -and $s.SignerCertificate.Subject -match ''(^|, )O=Microsoft Corporation(,|$)''){exit 0}else{exit 1}';
+    Parameters := '-NoProfile -NonInteractive -WindowStyle Hidden -Command "' + Script + '"';
+    if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode)) or (ExitCode <> 0) then begin
+      Result := 'WebView2 安装程序的微软签名校验失败，请检查网络后重试。';
+      exit;
+    end;
+    if (not Exec(Bootstrapper, '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ExitCode)) or (ExitCode <> 0) or (not HasWebView2) then
+      Result := '未能安装 WebView2 Runtime，请从微软网站安装后重试。';
+  except
+    Result := '无法下载 WebView2 Runtime，请检查网络后重试，或先手动安装微软 WebView2 Runtime。';
+  end;
+#endif
+end;
+#endif
 
 function OpenEvent(DesiredAccess: LongWord; InheritHandle: Boolean; Name: String): THandle;
   external 'OpenEventW@kernel32.dll stdcall';

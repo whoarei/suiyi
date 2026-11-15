@@ -1,9 +1,9 @@
 param([switch]$Show, [switch]$Diagnostics, [switch]$Settings, [switch]$CheckUpdates)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$appPath = Join-Path $projectRoot 'artifacts\TranslationFloat\TranslationFloat.exe'
+$appPath = Join-Path $projectRoot 'artifacts\Tauri\TranslationFloat.exe'
 if (-not (Test-Path -LiteralPath $appPath)) {
-    $appPath = Join-Path $projectRoot 'src\TranslationFloat.App\bin\Release\net10.0-windows\win-x64\TranslationFloat.exe'
+    $appPath = Join-Path $projectRoot 'src-tauri\target\release\TranslationFloat.exe'
 }
 if (-not (Test-Path -LiteralPath $appPath)) { throw '请先运行 scripts\build.ps1。' }
 $appArguments = @()

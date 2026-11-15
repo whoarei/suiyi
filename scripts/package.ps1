@@ -12,15 +12,12 @@ $releasePath = Join-Path $projectRoot 'artifacts\release'
 New-Item -ItemType Directory -Path $appPath, $releasePath -Force | Out-Null
 
 & (Join-Path $PSScriptRoot 'build.ps1') -Version $Version -OutputDirectory $appPath
-foreach ($requiredFile in @('TranslationFloat.exe', 'TranslationFloat.dll', 'TranslationFloat.runtimeconfig.json', 'coreclr.dll', 'PresentationFramework.dll', '使用说明.txt')) {
+foreach ($requiredFile in @('TranslationFloat.exe', '使用说明.txt')) {
     if (-not (Test-Path -LiteralPath (Join-Path $appPath $requiredFile) -PathType Leaf)) {
         throw "便携包缺少必需文件：$requiredFile"
     }
 }
-$runtime = Get-Content -LiteralPath (Join-Path $appPath 'TranslationFloat.runtimeconfig.json') -Raw | ConvertFrom-Json
-if (-not $runtime.runtimeOptions.includedFrameworks -or $runtime.runtimeOptions.framework -or $runtime.runtimeOptions.frameworks) {
-    throw '发布目录不是自包含版本。'
-}
+if (Get-ChildItem -LiteralPath $appPath -Recurse -File | Where-Object { $_.Name -in @('coreclr.dll','PresentationFramework.dll','TranslationFloat.dll') }) { throw 'Tauri 发布包混入了 .NET 运行时。' }
 $unexpected = Get-ChildItem -LiteralPath $appPath -File -Recurse | Where-Object {
     $_.Name -in @('deepseek.key', 'settings.json', 'm0.log') -or $_.Name -like 'api-*.key' -or $_.Name -like '.env*'
 }

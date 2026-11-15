@@ -7,13 +7,14 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $appPath = (Resolve-Path -LiteralPath $AppDirectory).Path
 $outputPath = if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'artifacts\release' }
-foreach ($name in @('TranslationFloat.exe','TranslationFloat.dll','coreclr.dll','PresentationFramework.dll','使用说明.txt')) {
+foreach ($name in @('TranslationFloat.exe','使用说明.txt')) {
     if (-not (Test-Path -LiteralPath (Join-Path $appPath $name) -PathType Leaf)) { throw "安装源缺少文件：$name" }
 }
 $compiler = & (Join-Path $PSScriptRoot 'ensure-inno.ps1')
+if (Test-Path -LiteralPath (Join-Path $appPath 'coreclr.dll')) { throw 'Tauri 安装源不能包含旧 .NET 运行时。' }
 New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 $fileVersion = ($Version -split '-')[0] + '.0'
-& $compiler '/Qp' "/DAppVersion=$Version" "/DAppFileVersion=$fileVersion" "/DAppSource=$appPath" "/DSetupOutput=$outputPath" (Join-Path $projectRoot 'installer\Suiyi.iss')
+& $compiler '/Qp' '/DTauriBuild=1' "/DAppVersion=$Version" "/DAppFileVersion=$fileVersion" "/DAppSource=$appPath" "/DSetupOutput=$outputPath" (Join-Path $projectRoot 'installer\Suiyi.iss')
 if ($LASTEXITCODE -ne 0) { throw '安装包构建失败。' }
 $setupPath = Join-Path $outputPath "suiyi-$Version-windows-x64-setup.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) { throw '没有生成安装包。' }
