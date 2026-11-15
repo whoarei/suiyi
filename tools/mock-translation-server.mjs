@@ -16,10 +16,14 @@ http.createServer(async (request, response) => {
   let body;
   try { body = JSON.parse(Buffer.concat(chunks)); } catch { response.statusCode = 400; return response.end('{}'); }
   const text = body.messages?.find((m) => m.role === 'user')?.content || '';
+  const prompt = body.messages?.find((m) => m.role === 'system')?.content || '';
+  const target = /translate the user's text into ([^.]+)\./i.exec(prompt)?.[1] || 'English';
+  process.stdout.write(`Fixture target language: ${target}\n`);
   if (text.includes('失败')) { response.statusCode = 429; response.setHeader('retry-after', '1'); return response.end(JSON.stringify({ error: { message: 'fixture only' } })); }
   if (text.includes('慢')) await new Promise((r) => setTimeout(r, 2000));
   const lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-  const translate = (line) => !line.trim() ? '' : mappings.get(line) || 'Translated fixture text';
+  const fixture = { Japanese: 'こんにちは、世界。', Arabic: 'مرحبا بالعالم', 'Simplified Chinese': '欢迎测试', 'Traditional Chinese': '歡迎測試' };
+  const translate = (line) => !line.trim() ? '' : fixture[target] || mappings.get(line) || 'Translated fixture text';
   const content = lines.length > 1 ? JSON.stringify({ lines: lines.map(translate) }) : translate(text);
   response.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content } }] }));
 }).listen(port, '127.0.0.1', () => process.stdout.write(`Local translation fixture: http://127.0.0.1:${port}/v1\n`));

@@ -2,6 +2,8 @@
 mod api;
 mod app;
 mod ffi;
+mod i18n;
+mod language;
 mod logging;
 mod native;
 #[cfg(test)]

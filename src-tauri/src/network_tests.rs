@@ -143,7 +143,39 @@ async fn minimal_protocol_and_endpoint() {
     assert_eq!(body.as_object().unwrap().len(), 3);
     assert_eq!(body["model"], "namespace/model:free");
     assert_eq!(body["stream"], false);
+    assert!(
+        body["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("into English")
+    );
     assert_eq!(body["messages"][1]["content"], "你好")
+}
+#[tokio::test]
+async fn target_language_reaches_request_and_preserves_multiline_contract() {
+    use crate::language::{LANGUAGES, TargetLanguage};
+    for language in LANGUAGES {
+        let target: TargetLanguage = serde_json::from_value(json!(language.code)).unwrap();
+        assert_eq!(target.definition().code, language.code);
+        let fake = serve(vec![response(
+            200,
+            translated(r#"{"lines":["one","","two"]}"#),
+        )]);
+        let result = Provider::new(api::client(), &fake.url, "model", "")
+            .unwrap()
+            .with_target_language(target)
+            .translate("Hello\r\n\r\nworld", &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(result, "one\r\n\r\ntwo");
+        let requests = fake.requests.lock().unwrap();
+        let body = &requests[0].1;
+        assert_eq!(body.as_object().unwrap().len(), 3);
+        let prompt = body["messages"][0]["content"].as_str().unwrap();
+        assert!(prompt.contains(&format!("into {}", language.prompt)));
+        assert!(prompt.contains("exactly 3 strings"));
+        assert_eq!(body["messages"][1]["content"], "Hello\r\n\r\nworld");
+    }
 }
 #[tokio::test]
 async fn anonymous_endpoint_has_no_authorization() {

@@ -1,12 +1,12 @@
 # 随译技术方案
 
-本文描述 v0.3.1 的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
+本文描述当前开发分支的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
 
 [软件简介](../README.md) · [使用与配置](reference.md) · [安装与升级](installation.md) · [兼容性](compatibility.md) · [WPF 历史方案](technical-design-wpf.md)
 
 ## 范围与架构
 
-随译是 Windows 常驻托盘翻译工具，当前提供中译英。普通模式在极简浮窗预览、编辑译文后回填；快速模式直接翻译并替换选区，失败仅显示短暂提示；托盘打开的复制模式不绑定外部输入位置。它不注册输入法，不采集逐键文本或完整聊天记录，不自动发送消息。
+随译是 Windows 常驻托盘翻译工具，自动识别原文语言，提供 12 种目标语言，默认英语。普通模式在极简浮窗预览、编辑译文后回填；快速模式直接翻译并替换选区，失败仅显示短暂提示；托盘打开的复制模式不绑定外部输入位置。它不注册输入法，不采集逐键文本或完整聊天记录，不自动发送消息。
 
 | 层次 | 实现与职责 |
 | --- | --- |
@@ -45,6 +45,7 @@ flowchart TB
 | [native.rs](../src-tauri/src/native.rs)、[ffi.rs](../src-tauri/src/ffi.rs) | Windows 互操作、目标识别、选区读取、一次回填、快捷键线程、Shell 图标 |
 | [api.rs](../src-tauri/src/api.rs) | 通用翻译协议、模型查询、超时、大小限制与错误归类 |
 | [store.rs](../src-tauri/src/store.rs) | 配置、旧版兼容、DPAPI、偏好与登录启动项 |
+| [language.rs](../src-tauri/src/language.rs)、[i18n.rs](../src-tauri/src/i18n.rs)、[en.json](../src-tauri/locales/en.json) | 有界目标语言、系统界面语言及中英文提示词典 |
 | [theme.rs](../src-tauri/src/theme.rs) | 十种配色、深浅、对比度与主题图标 |
 | [update.rs](../src-tauri/src/update.rs) | 版本判断、安装附件、受限下载与 SHA-256 校验 |
 | [controller.js](../ui/controller.js)、[app.js](../ui/app.js) | 防抖、输入法组合状态、界面渲染与事件 |
@@ -60,6 +61,8 @@ flowchart TB
 全局快捷键由独立 Win32 消息线程注册，使用 `MOD_NOREPEAT`。默认 `Ctrl+Alt+T`，录入时临时释放原组合，保存新组合时先检查占用，再替换注册；失败恢复原组合。`Ctrl+Enter` 只在浮窗处理。
 
 前端只能加载随包本地资源。CSP 禁止远程脚本与页面框架；翻译、模型查询和更新网络请求均在 Rust 中完成。敏感 IPC 按实际窗口 label 检查来源，例如只有设置窗口可以显式读取或保存密钥。外部译文、模型名称和错误提示通过文本或输入值渲染，不拼接成 HTML。
+
+界面语言通过 Windows `GetUserDefaultUILanguage` 读取，中文 UI 语言使用中文，其他语言使用英文；不写入偏好，也不增加切换参数。程序启动时确定语言，系统显示语言更改后重启程序生效。Rust 原生窗口标题、托盘提示、启动错误和前端共享英文词典，前端只翻译界面文案，不改动用户原文或译文。
 
 网络使用异步任务，跨进程窗口查询和粘贴放到阻塞工作线程。UIA 查询使用同一 EXE 的 `--inspect-focus`、`--inspect-selection` 模式，在 Tauri、托盘和配置初始化前运行并退出。父进程最多等 900 毫秒，超时终止辅助进程，输出限制 32 KiB。
 
@@ -148,7 +151,7 @@ sequenceDiagram
 
 | 数据 | 位置 |
 | --- | --- |
-| 版本 2 API 地址与模型 | `%LOCALAPPDATA%\TranslationFloat\settings.json` |
+| 版本 2 API 地址、模型与 `TargetLanguage` | `%LOCALAPPDATA%\TranslationFloat\settings.json` |
 | 各地址加密 Key | 同目录 `api-<归一化地址的 SHA-256>.key`，Windows DPAPI CurrentUser，无附加熵，兼容 WPF 密文 |
 | 快捷键、快速模式、主题及启动偏好 | `HKCU\Software\Suiyi`：沿用 `HotKey`、`QuickModeEnabled`、`ThemeColor`、`AutoStartEnabled` |
 | 登录启动 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Suiyi` |
@@ -156,6 +159,8 @@ sequenceDiagram
 | 草稿及翻译缓存 | 仅内存，不持久化历史 |
 
 密钥按地址隔离，同地址留空保留已有 Key。旧版本 1 配置、`deepseek.key` 和限定旧 DeepSeek 地址的环境变量兼容来源继续保留。原安装用户无需重新填写接口和密钥。密钥小眼睛、失焦隐藏、跨地址清除已加载密钥及关闭清空控件继续保留。
+
+目标语言使用固定枚举编码保存；旧配置缺少字段或未知未来值时回退英语，保留地址和模型。普通翻译、快速替换及设置中的连接测试均使用所选语言；源语言由模型识别。目标写入系统提示词，不添加厂商专用请求参数。缓存键包含目标语言，保存配置同时清空缓存并使旧结果失效。原文与译文输入框使用 `dir="auto"`，适配从右到左的文字。
 
 默认开机启动开启，快速模式关闭，快捷键 `Ctrl+Alt+T`。便携版移动目录后重新运行，开启状态下更新登录启动路径。卸载保留配置与偏好，只移除指向本次安装位置的启动命令。
 
@@ -208,4 +213,4 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 GUI 联调用 `--test-profile <绝对目录>` 隔离服务配置、密钥和偏好，并禁用真实启动项修改；示例本地服务见 [mock-translation-server.mjs](../tools/mock-translation-server.mjs)。实测与限制记录在 [compatibility.md](compatibility.md)，WPF 时代的 187 项检查不作为 Tauri 版已通过检查数。
 
-仍需扩大验证的范围包括更多外部浏览器与编辑器、微信等自绘控件选区、多屏混合 DPI、休眠恢复、高权限目标及极短时间的焦点/剪贴板竞争。流式输出、更多目标语言、本地模型管理和持久历史均未实现。
+仍需扩大验证的范围包括更多外部浏览器与编辑器、微信等自绘控件选区、多屏混合 DPI、休眠恢复、高权限目标及极短时间的焦点/剪贴板竞争。流式输出、本地模型管理和持久历史均未实现。

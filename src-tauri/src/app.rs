@@ -1,5 +1,7 @@
 use crate::{
     api::{self, Provider},
+    i18n,
+    language::{LANGUAGES, TargetLanguage},
     native::{self, HotkeyWorker, Receipt, Target},
     store::{Config, Hotkey, Preferences, Store},
     theme, update,
@@ -80,6 +82,7 @@ fn provider(state: &Runtime, address: &str, model: &str, key: &str) -> Result<Pr
 fn active_provider(state: &Runtime) -> Result<Provider, String> {
     let config = state.config.lock().unwrap().clone();
     provider(state, &config.base_url, &config.model, "")
+        .map(|provider| provider.with_target_language(config.target_language))
         .map_err(|_| "请先从托盘设置翻译接口和模型。".into())
 }
 fn refresh_theme(app: &AppHandle) {
@@ -94,9 +97,10 @@ fn refresh_tray_text(app: &AppHandle) {
     let preferences = app.state::<Runtime>().prefs.lock().unwrap().clone();
     if let Some(tray) = app.tray_by_id("suiyi") {
         let _ = tray.set_tooltip(Some(format!(
-            "随译 · {}{}",
+            "{} · {}{}",
+            i18n::text("随译"),
             if preferences.quick_mode {
-                "快速模式 · "
+                i18n::text("快速模式 · ")
             } else {
                 ""
             },
@@ -337,7 +341,7 @@ fn boot(window: WebviewWindow, state: State<Runtime>) -> Result<Value, String> {
             .credential(&config.base_url, "")
             .is_ok_and(|k| !k.is_empty());
     Ok(
-        json!({"version":env!("SUIYI_VERSION"),"preferences":p,"colors":theme::colors(&state.prefs.lock().unwrap().theme,theme::dark()),"palettes":theme::PALETTES,"config":{"address":config.base_url,"model":config.model,"hasKey":has_key},"context":if window.label()=="main"{serde_json::to_value(&*state.context.lock().unwrap()).unwrap()}else{Value::Null}}),
+        json!({"version":env!("SUIYI_VERSION"),"locale":i18n::locale(),"messages":i18n::messages(),"languages":LANGUAGES,"preferences":p,"colors":theme::colors(&state.prefs.lock().unwrap().theme,theme::dark()),"palettes":theme::PALETTES,"config":{"address":config.base_url,"model":config.model,"hasKey":has_key,"targetLanguage":config.target_language},"context":if window.label()=="main"{serde_json::to_value(&*state.context.lock().unwrap()).unwrap()}else{Value::Null}}),
     )
 }
 #[tauri::command]
@@ -359,6 +363,7 @@ async fn translate(
 ) -> Result<String, String> {
     role(&window, &["main"])?;
     let provider = active_provider(&state)?;
+    let cache_key = format!("{}\0{text}", provider.target_language.definition().code);
     cancel_normal(&state, true);
     let generation = state.generation.load(Ordering::SeqCst);
     state.normal_serial.store(serial, Ordering::SeqCst);
@@ -369,7 +374,7 @@ async fn translate(
         .lock()
         .unwrap()
         .values
-        .get(&text)
+        .get(&cache_key)
         .filter(|(_, time)| time.elapsed() < Duration::from_secs(600))
         .map(|(v, _)| v.clone());
     let result = if let Some(cached) = cached {
@@ -392,10 +397,10 @@ async fn translate(
                 if cancel.is_cancelled() || state.generation.load(Ordering::SeqCst) != generation {
                     return Err("已取消。".into());
                 }
-                if !cache.values.contains_key(&text) {
-                    cache.order.push_back(text.clone())
+                if !cache.values.contains_key(&cache_key) {
+                    cache.order.push_back(cache_key.clone())
                 }
-                cache.values.insert(text, (v.clone(), Instant::now()));
+                cache.values.insert(cache_key, (v.clone(), Instant::now()));
                 while cache.values.len() > 128 {
                     if let Some(old) = cache.order.pop_front() {
                         cache.values.remove(&old);
@@ -488,6 +493,8 @@ pub struct SettingsInput {
     key: String,
     hotkey: Hotkey,
     quick_mode: bool,
+    #[serde(default)]
+    target_language: TargetLanguage,
 }
 #[tauri::command]
 fn save_settings(
@@ -510,10 +517,12 @@ fn save_settings(
         prefs.hotkey = input.hotkey;
         prefs.quick_mode = input.quick_mode;
         state.store.save_preferences(&prefs)?;
-        let config = match state
-            .store
-            .save_config(&input.address, &input.model, &input.key)
-        {
+        let config = match state.store.save_config(
+            &input.address,
+            &input.model,
+            &input.key,
+            input.target_language,
+        ) {
             Ok(config) => config,
             Err(error) => {
                 let _ = state.store.save_preferences(&old);
@@ -582,9 +591,10 @@ async fn test_connection(
     address: String,
     model: String,
     key: String,
+    target_language: TargetLanguage,
 ) -> Result<(), String> {
     role(&window, &["settings"])?;
-    let provider = provider(&state, &address, &model, &key)?;
+    let provider = provider(&state, &address, &model, &key)?.with_target_language(target_language);
     let cancel = state.settings_cancel.lock().unwrap().clone();
     provider
         .translate("你好，世界。", &cancel)
@@ -855,7 +865,7 @@ pub fn run() {
                     label,
                     WebviewUrl::App(format!("index.html?view={label}").into()),
                 )
-                .title(title)
+                .title(i18n::text(title))
                 .inner_size(width, height)
                 .resizable(false)
                 .decorations(false)
@@ -906,7 +916,11 @@ pub fn run() {
             let icon = theme::icon(&prefs.theme, theme::dark(), 32);
             TrayIconBuilder::with_id("suiyi")
                 .icon(tauri::image::Image::new_owned(icon.into_raw(), 32, 32))
-                .tooltip(format!("随译 · {}", prefs.hotkey.display()))
+                .tooltip(format!(
+                    "{} · {}",
+                    i18n::text("随译"),
+                    prefs.hotkey.display()
+                ))
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| match event {
                     TrayIconEvent::Click {
@@ -983,7 +997,7 @@ pub fn run() {
             _ => (),
         }),
         Err(_) => unsafe {
-            crate::ffi::MessageBoxW(0,crate::ffi::wide("随译未能启动。请确认 Microsoft WebView2 Runtime 已安装；推荐运行随译安装包，它会在缺少时自动下载安装该组件。").as_ptr(),crate::ffi::wide("随译").as_ptr(),0x10);
+            crate::ffi::MessageBoxW(0,crate::ffi::wide(i18n::text("随译未能启动。请确认 Microsoft WebView2 Runtime 已安装；推荐运行随译安装包，它会在缺少时自动下载安装该组件。")).as_ptr(),crate::ffi::wide(i18n::text("随译")).as_ptr(),0x10);
         },
     }
 }

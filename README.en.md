@@ -6,7 +6,7 @@
 
 **Select a sentence. Translate in place.**
 
-Suiyi brings Chinese-to-English translation to your Windows input fields. Enable Quick Mode, select Chinese text, and press `Ctrl+Alt+T`. The translation replaces your selection and keeps the surrounding text intact.
+Suiyi translates text in your Windows input fields. Enable Quick Mode, select text, and press `Ctrl+Alt+T`. The translation replaces your selection and keeps the surrounding text intact.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/quick-replace-dark.en.gif">
@@ -22,6 +22,7 @@ Suiyi brings Chinese-to-English translation to your Windows input fields. Enable
 - **Translation popup**: translate as you type, edit the result, then insert or copy it.
 - **Across applications**: insert at the cursor or replace a selection in supported chat apps, browsers, and editors.
 - **Flexible translation APIs**: use an OpenAI-compatible Chat Completions service, choose your model, and fetch available model IDs.
+- **Languages**: automatic source detection and 12 target languages, with English as the default. The Chinese or English interface follows Windows automatically.
 - **Ready when you are**: customizable shortcut, tray controls, and startup at login.
 - **Color themes**: 10 accent colors, orange by default. Light and dark modes follow Windows, with matching window, taskbar, and tray icons.
 - **Local encryption**: API keys are encrypted for your Windows user and stored separately for each API endpoint.

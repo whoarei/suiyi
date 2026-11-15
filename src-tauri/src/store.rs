@@ -1,4 +1,5 @@
 use crate::ffi;
+use crate::language::TargetLanguage;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
@@ -11,6 +12,8 @@ pub struct Config {
     pub model: String,
     #[serde(default)]
     pub base_url: String,
+    #[serde(default, deserialize_with = "TargetLanguage::deserialize_or_default")]
+    pub target_language: TargetLanguage,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +101,9 @@ impl Store {
         if !(config.version == 1 || config.version == 2) {
             return Config::default();
         }
+        if config.base_url.is_empty() && config.model.is_empty() {
+            return config;
+        }
         match normalize(&config.base_url) {
             Ok(url) => {
                 config.base_url = url;
@@ -133,10 +139,17 @@ impl Store {
         }
         Ok(String::new())
     }
-    pub fn save_config(&self, address: &str, model: &str, key: &str) -> Result<Config, String> {
+    pub fn save_config(
+        &self,
+        address: &str,
+        model: &str,
+        key: &str,
+        target_language: TargetLanguage,
+    ) -> Result<Config, String> {
         if address.trim().is_empty() && model.trim().is_empty() && key.trim().is_empty() {
             let config = Config {
                 version: 2,
+                target_language,
                 ..Config::default()
             };
             self.atomic("settings.json", &serde_json::to_vec(&config).unwrap())?;
@@ -163,6 +176,7 @@ impl Store {
             version: 2,
             model,
             base_url,
+            target_language,
         };
         self.atomic("settings.json", &serde_json::to_vec(&config).unwrap())?;
         Ok(config)
@@ -372,6 +386,41 @@ pub fn isolated_test_store() -> Store {
 mod tests {
     use super::*;
     #[test]
+    fn target_language_round_trip_and_legacy_default() {
+        let s = isolated_test_store();
+        s.atomic(
+            "settings.json",
+            br#"{"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.config().target_language, TargetLanguage::English);
+        s.save_config(
+            "https://one.example/v1",
+            "legacy-model",
+            "",
+            TargetLanguage::Japanese,
+        )
+        .unwrap();
+        assert_eq!(s.config().target_language, TargetLanguage::Japanese);
+        assert_eq!(s.config().model, "legacy-model");
+        // A setting from a future version must not erase the endpoint and model.
+        s.atomic("settings.json", br#"{"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model","TargetLanguage":"future-language"}"#).unwrap();
+        assert_eq!(s.config().target_language, TargetLanguage::English);
+        assert_eq!(s.config().base_url, "https://one.example/v1/");
+        assert_eq!(s.config().model, "legacy-model");
+        // The target can also be saved before an API endpoint is configured.
+        s.save_config("", "", "", TargetLanguage::TraditionalChinese)
+            .unwrap();
+        let raw: Config =
+            serde_json::from_slice(&fs::read(s.root.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(raw.target_language, TargetLanguage::TraditionalChinese);
+        assert_eq!(
+            s.config().target_language,
+            TargetLanguage::TraditionalChinese
+        );
+        fs::remove_dir_all(s.root).unwrap();
+    }
+    #[test]
     fn endpoints() {
         assert_eq!(
             normalize("https://example.com/v1/chat/completions").unwrap(),
@@ -414,8 +463,13 @@ mod tests {
     #[test]
     fn key_isolation_dpapi() {
         let s = isolated_test_store();
-        s.save_config("https://one.example/v1", "model:1", "fake-test-key")
-            .unwrap();
+        s.save_config(
+            "https://one.example/v1",
+            "model:1",
+            "fake-test-key",
+            TargetLanguage::English,
+        )
+        .unwrap();
         assert_eq!(
             s.credential("https://one.example/v1", "").unwrap(),
             "fake-test-key"
@@ -438,8 +492,13 @@ mod tests {
         s.atomic("settings.json", br#"{"Version":1,"Model":"legacy-model"}"#)
             .unwrap();
         assert_eq!(s.config().base_url, "https://api.deepseek.com/");
-        s.save_config(&s.config().base_url, "legacy-model", "")
-            .unwrap();
+        s.save_config(
+            &s.config().base_url,
+            "legacy-model",
+            "",
+            TargetLanguage::English,
+        )
+        .unwrap();
         assert_eq!(s.config().version, 2);
         fs::remove_dir_all(s.root).unwrap()
     }
