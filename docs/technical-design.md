@@ -1,6 +1,6 @@
 # 随译技术方案
 
-本文描述 v0.3.0 的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
+本文描述 v0.3.1 的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
 
 [软件简介](../README.md) · [使用与配置](reference.md) · [安装与升级](installation.md) · [兼容性](compatibility.md) · [WPF 历史方案](technical-design-wpf.md)
 
@@ -54,6 +54,8 @@ flowchart TB
 ## 生命周期与 IPC
 
 普通启动通过 `Local\TranslationFloat.M0` 保持会话内单实例。重复启动的新实例退出；托盘操作或全局快捷键唤出原实例。浮窗与其他面板关闭时隐藏，托盘“退出”才关闭进程。
+
+五类窗口统一采用透明、无系统装饰的外壳，关闭 Windows 原生窗口阴影，由页面面板绘制单层圆角细边。页面不留外圈空白，窗口高度按面板实际高度自适应，避免页面留白与原生边框叠加。模型列表相对模型输入框定位，不依赖窗口外边距。
 
 全局快捷键由独立 Win32 消息线程注册，使用 `MOD_NOREPEAT`。默认 `Ctrl+Alt+T`，录入时临时释放原组合，保存新组合时先检查占用，再替换注册；失败恢复原组合。`Ctrl+Enter` 只在浮窗处理。
 
@@ -193,7 +195,7 @@ sequenceDiagram
 .\scripts\run.ps1 -Show -Diagnostics
 
 # 安装包和便携包；本地打包不发布 Release
-.\scripts\package.ps1 -Version 0.3.0
+.\scripts\package.ps1 -Version 0.3.1
 
 # 额外检查；安装器夹具需要 global.json 指定的 .NET SDK
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

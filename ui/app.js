@@ -30,7 +30,7 @@ function wireFrame() {
 function fit() {
   const width = { main: 440, settings: 420, menu: 244, notice: 360, update: 420 }[view];
   const panel = document.querySelector('.panel');
-  if (panel) currentWindow.setSize(new window.__TAURI__.dpi.LogicalSize(width, Math.ceil(panel.getBoundingClientRect().height + 16))).catch(() => {});
+  if (panel) currentWindow.setSize(new window.__TAURI__.dpi.LogicalSize(width, Math.ceil(panel.getBoundingClientRect().height))).catch(() => {});
 }
 new ResizeObserver(fit).observe(root);
 await boot();
@@ -84,7 +84,7 @@ if (view === 'main') {
   window.addEventListener('focus', () => { if (!session.suspended) return; session.resume(); });
   wireFrame(); open(context);
 } else if (view === 'settings') {
-  root.innerHTML = `<section class="panel settings">${header('设置')}<div class="body"><div class="row"><label for="address">API</label><div class="field input-group"><input id="address" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false"></div></div><div class="row"><label for="key">Key</label><div class="field input-group"><input id="key" type="password" placeholder="API Key" autocomplete="off" spellcheck="false">${icon('eye', '显示密钥', 'eye')}</div></div><div class="row"><label for="model">模型</label><div class="field input-group"><input id="model" placeholder="模型名称" autocomplete="off" spellcheck="false">${icon('download', '获取模型', 'models')}</div></div><div class="model-options hidden" id="model-options"></div><div class="row"><label for="shortcut">快捷键</label><div class="field input-group"><button id="shortcut" class="hotkey" title="点击后按下新组合键"></button>${icon('reset', '恢复默认快捷键', 'reset')}</div></div><div class="settings-bottom"><label class="switch-label"><input id="quick" class="switch" type="checkbox">快速模式</label><button class="secondary" id="test">测试</button><button class="primary" id="save">保存</button></div><p class="status" id="status"></p></div></section>`;
+  root.innerHTML = `<section class="panel settings">${header('设置')}<div class="body"><div class="row"><label for="address">API</label><div class="field input-group"><input id="address" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false"></div></div><div class="row"><label for="key">Key</label><div class="field input-group"><input id="key" type="password" placeholder="API Key" autocomplete="off" spellcheck="false">${icon('eye', '显示密钥', 'eye')}</div></div><div class="row"><label for="model">模型</label><div class="field input-group"><input id="model" placeholder="模型名称" autocomplete="off" spellcheck="false">${icon('download', '获取模型', 'models')}<div class="model-options hidden" id="model-options"></div></div></div><div class="row"><label for="shortcut">快捷键</label><div class="field input-group"><button id="shortcut" class="hotkey" title="点击后按下新组合键"></button>${icon('reset', '恢复默认快捷键', 'reset')}</div></div><div class="settings-bottom"><label class="switch-label"><input id="quick" class="switch" type="checkbox">快速模式</label><button class="secondary" id="test">测试</button><button class="primary" id="save">保存</button></div><p class="status" id="status"></p></div></section>`;
   let hotkey, origin = null, waiting = false, recording = false;
   function masked() { $('key').type = 'password'; $('eye').title = '显示密钥'; $('eye').setAttribute('aria-label', '显示密钥'); }
   async function load() {

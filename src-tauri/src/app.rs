@@ -860,7 +860,8 @@ pub fn run() {
                 .resizable(false)
                 .decorations(false)
                 .transparent(true)
-                .shadow(true)
+                // DWM shadows add an extra native frame around transparent panels.
+                .shadow(false)
                 .visible(false)
                 .skip_taskbar(!(diagnostics && label == "main"))
                 .always_on_top(true)
