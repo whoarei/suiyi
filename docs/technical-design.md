@@ -1,6 +1,6 @@
 # 随译技术方案
 
-本文描述当前开发分支的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
+本文描述 v0.3.2 的 **Tauri 2 + Rust** 实现。更新日期：2026 年 11 月 15 日。
 
 [软件简介](../README.md) · [使用与配置](reference.md) · [安装与升级](installation.md) · [兼容性](compatibility.md) · [WPF 历史方案](technical-design-wpf.md)
 
@@ -200,7 +200,7 @@ sequenceDiagram
 .\scripts\run.ps1 -Show -Diagnostics
 
 # 安装包和便携包；本地打包不发布 Release
-.\scripts\package.ps1 -Version 0.3.1
+.\scripts\package.ps1 -Version 0.3.2
 
 # 额外检查；安装器夹具需要 global.json 指定的 .NET SDK
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
