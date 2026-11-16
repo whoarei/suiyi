@@ -8,6 +8,8 @@
 
 随译是一款 Windows 翻译工具。开启快速模式，选中文字，按下 `Ctrl+Alt+T`，译文直接替换原选区，保留前后内容。
 
+没有选中文字或可用输入框时，同一快捷键打开翻译框，方便手动输入并翻译。也可关闭快速模式，始终先预览译文。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/quick-replace-dark.gif">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/quick-replace.gif">

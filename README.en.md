@@ -8,6 +8,8 @@
 
 Suiyi translates text in your Windows input fields. Enable Quick Mode, select text, and press `Ctrl+Alt+T`. The translation replaces your selection and keeps the surrounding text intact.
 
+With no selection or usable input field, the same shortcut opens the translation window for manual input. Turn off Quick Mode to always preview translations first.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/quick-replace-dark.en.gif">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/quick-replace.en.gif">

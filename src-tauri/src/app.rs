@@ -28,6 +28,39 @@ struct OpenContext {
     has_target: bool,
     message: String,
 }
+enum ShortcutAction {
+    Replace(Target, String),
+    Popup(Option<Target>, OpenContext),
+}
+fn shortcut_action(
+    quick_mode: bool,
+    capture: Result<(Target, Option<String>), String>,
+) -> ShortcutAction {
+    match capture {
+        Ok((target, text)) => {
+            if quick_mode
+                && target.selection.is_some()
+                && text.as_ref().is_some_and(|text| !text.trim().is_empty())
+            {
+                return ShortcutAction::Replace(target, text.unwrap());
+            }
+            let context = OpenContext {
+                selected: text,
+                target_name: native::display_name(&target.name),
+                has_target: true,
+                message: String::new(),
+            };
+            ShortcutAction::Popup(Some(target), context)
+        }
+        Err(message) => ShortcutAction::Popup(
+            None,
+            OpenContext {
+                message,
+                ..Default::default()
+            },
+        ),
+    }
+}
 struct Cache {
     values: HashMap<String, (String, Instant)>,
     order: VecDeque<String>,
@@ -244,85 +277,65 @@ fn trigger(app: &AppHandle) {
         let capture =
             tauri::async_runtime::spawn_blocking(move || native::capture(trigger, &token)).await;
         let state = app.state::<Runtime>();
-        let result = match capture {
-            Ok(Ok((target, text))) => {
-                *state.target.lock().unwrap() = Some(target.clone());
-                if prefs.quick_mode {
-                    if target.selection.is_none()
-                        || text.as_ref().is_none_or(|s| s.trim().is_empty())
-                    {
-                        Err("请先在支持的输入框选中文字，再按快捷键。".into())
-                    } else {
-                        match active_provider(&state) {
-                            Err(e) => Err(e),
-                            Ok(provider) => match provider
-                                .translate(text.as_deref().unwrap(), &cancel)
-                                .await
-                            {
-                                Err(e) => Err(e.message),
-                                Ok(translation) => {
-                                    if cancel.is_cancelled() {
-                                        Err("快速翻译已取消。".into())
-                                    } else {
-                                        let current = state.target.clone();
-                                        let cancel = cancel.clone();
-                                        let owner = app
-                                            .get_webview_window("main")
-                                            .and_then(|w| w.hwnd().ok())
-                                            .map(|h| h.0 as isize)
-                                            .unwrap_or(0);
-                                        let receipt =
-                                            tauri::async_runtime::spawn_blocking(move || {
-                                                native::insert(
-                                                    &target,
-                                                    &translation,
-                                                    false,
-                                                    trigger,
-                                                    &cancel,
-                                                    &current,
-                                                    owner,
-                                                )
-                                            })
-                                            .await
-                                            .unwrap_or_else(|_| Receipt::reject("快速翻译失败。"));
-                                        if receipt.submitted() {
-                                            if let Some(w) = app.get_webview_window("main") {
-                                                let _ = w.emit("clear", ());
-                                            }
-                                            Ok(())
-                                        } else {
-                                            Err(receipt.message)
-                                        }
-                                    }
-                                }
-                            },
+        let capture = capture.unwrap_or_else(|_| Err("无法识别原输入位置。".into()));
+        let result = if cancel.is_cancelled() {
+            *state.target.lock().unwrap() = None;
+            Err("快速翻译已取消。".into())
+        } else {
+            match shortcut_action(prefs.quick_mode, capture) {
+                ShortcutAction::Replace(target, text) => {
+                    *state.target.lock().unwrap() = Some(target.clone());
+                    let result = async {
+                        let provider = active_provider(&state)?;
+                        let translation = provider
+                            .translate(&text, &cancel)
+                            .await
+                            .map_err(|e| e.message)?;
+                        if cancel.is_cancelled() {
+                            return Err("快速翻译已取消。".into());
+                        }
+                        let current = state.target.clone();
+                        let cancel = cancel.clone();
+                        let owner = app
+                            .get_webview_window("main")
+                            .and_then(|w| w.hwnd().ok())
+                            .map(|h| h.0 as isize)
+                            .unwrap_or(0);
+                        let receipt = tauri::async_runtime::spawn_blocking(move || {
+                            native::insert(
+                                &target,
+                                &translation,
+                                false,
+                                trigger,
+                                &cancel,
+                                &current,
+                                owner,
+                            )
+                        })
+                        .await
+                        .unwrap_or_else(|_| Receipt::reject("快速翻译失败。"));
+                        if receipt.submitted() {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.emit("clear", ());
+                            }
+                            Ok(())
+                        } else {
+                            Err(receipt.message)
                         }
                     }
-                } else {
-                    let context = OpenContext {
-                        selected: text,
-                        target_name: native::display_name(&target.name),
-                        has_target: true,
-                        message: String::new(),
-                    };
-                    *state.context.lock().unwrap() = context.clone();
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.emit("open", context);
-                    }
-                    show(&app, "main", true);
-                    Ok(())
-                }
-            }
-            Ok(Err(message)) => {
-                if prefs.quick_mode {
-                    Err(message)
-                } else {
+                    .await;
                     *state.target.lock().unwrap() = None;
-                    let context = OpenContext {
-                        message,
-                        ..Default::default()
-                    };
+                    result
+                }
+                ShortcutAction::Popup(target, context) => {
+                    // Keep the captured target for manual insertion after the popup opens.
+                    *state.target.lock().unwrap() = target;
                     *state.context.lock().unwrap() = context.clone();
+                    crate::logging::write(
+                        "shortcut-popup",
+                        if context.has_target { "bound" } else { "copy" },
+                        None,
+                    );
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.emit("open", context);
                     }
@@ -330,10 +343,8 @@ fn trigger(app: &AppHandle) {
                     Ok(())
                 }
             }
-            Err(_) => Err("无法识别原输入位置。".into()),
         };
         if prefs.quick_mode {
-            *state.target.lock().unwrap() = None;
             *state.quick.lock().unwrap() = None;
         }
         state.busy.store(false, Ordering::SeqCst);
@@ -1058,5 +1069,80 @@ pub fn run() {
         Err(_) => unsafe {
             crate::ffi::MessageBoxW(0,crate::ffi::wide(i18n::text("随译未能启动。请确认 Microsoft WebView2 Runtime 已安装；推荐运行随译安装包，它会在缺少时自动下载安装该组件。")).as_ptr(),crate::ffi::wide(i18n::text("随译")).as_ptr(),0x10);
         },
+    }
+}
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::*;
+    use crate::native::Selection;
+
+    fn target(selected: bool) -> Target {
+        Target {
+            id: "captured-session".into(),
+            window: 1,
+            focus: 2,
+            pid: 3,
+            creation: 4,
+            name: "notepad".into(),
+            identity: None,
+            selection: selected.then(|| Selection {
+                method: "native".into(),
+                fingerprint: "selection".into(),
+                start: 1,
+                end: 3,
+            }),
+        }
+    }
+
+    #[test]
+    fn selected_text_replaces_only_in_quick_mode() {
+        let capture = Ok((target(true), Some("你好".into())));
+        let ShortcutAction::Replace(target, text) = shortcut_action(true, capture.clone()) else {
+            panic!("quick mode must replace the captured selection");
+        };
+        assert_eq!(target.id, "captured-session");
+        assert!(target.selection.is_some());
+        assert_eq!(text, "你好");
+
+        let ShortcutAction::Popup(Some(target), context) = shortcut_action(false, capture) else {
+            panic!("normal mode must preview the captured selection");
+        };
+        assert!(target.selection.is_some());
+        assert!(context.has_target);
+        assert_eq!(context.selected.as_deref(), Some("你好"));
+    }
+
+    #[test]
+    fn missing_selection_opens_popup_with_original_insertion_target() {
+        for quick in [true, false] {
+            let ShortcutAction::Popup(Some(target), context) =
+                shortcut_action(quick, Ok((target(false), None)))
+            else {
+                panic!("an empty selection must open the popup");
+            };
+            assert_eq!(target.id, "captured-session");
+            assert_eq!(target.focus, 2);
+            assert!(target.selection.is_none());
+            assert!(context.has_target);
+            assert_eq!(context.target_name, "记事本");
+            assert!(context.selected.is_none());
+            assert!(context.message.is_empty());
+        }
+    }
+
+    #[test]
+    fn missing_input_opens_copy_popup_and_keeps_capture_feedback() {
+        for quick in [true, false] {
+            let ShortcutAction::Popup(None, context) =
+                shortcut_action(quick, Err("No editable input".into()))
+            else {
+                panic!("an unavailable input must open the copy popup");
+            };
+            assert!(!context.has_target);
+            assert!(context.selected.is_none());
+            assert!(context.target_name.is_empty());
+            assert_eq!(context.message, "No editable input");
+        }
     }
 }

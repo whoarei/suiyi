@@ -7,6 +7,7 @@ const currentWindow = window.__TAURI__.window.getCurrentWindow();
 const view = new URLSearchParams(location.search).get('view') || 'main';
 const root = document.querySelector('#app');
 const $ = (id) => document.getElementById(id);
+const quickModeHint = '选中文字时直接替换；无选区或输入框时打开翻译框。关闭后始终打开翻译框。';
 const paths = {
   language: '<path d="M3 5h12M9 3v2M5 8c1 5 4 8 8 10M13 5c-1 6-5 11-10 13M14 21l4-10 4 10m-6-4h4"/>', back: '<path d="M19 12H5m7-7-7 7 7 7"/>', chevron: '<path d="m9 5 7 7-7 7"/>',
   close: '<path d="m5 5 14 14M19 5 5 19"/>', copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
@@ -88,6 +89,7 @@ if (view === 'main') {
   wireFrame(); open(context);
 } else if (view === 'settings') {
   root.innerHTML = `<section class="panel settings">${header('设置')}<div class="body"><div class="row"><label for="address">API</label><div class="field input-group"><input id="address" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false"></div></div><div class="row"><label for="key">Key</label><div class="field input-group"><input id="key" type="password" placeholder="API Key" autocomplete="off" spellcheck="false">${icon('eye', '显示密钥', 'eye')}</div></div><div class="row"><label for="model">模型</label><div class="field input-group"><input id="model" placeholder="模型名称" autocomplete="off" spellcheck="false">${icon('download', '获取模型', 'models')}<div class="model-options hidden" id="model-options"></div></div></div><div class="row"><label for="target-language">译为</label><div class="field input-group"><select id="target-language" aria-label="目标语言"></select></div></div><div class="row"><label for="shortcut">快捷键</label><div class="field input-group"><button id="shortcut" class="hotkey" title="点击后按下新组合键"></button>${icon('reset', '恢复默认快捷键', 'reset')}</div></div><div class="settings-bottom"><label class="switch-label"><input id="quick" class="switch" type="checkbox">快速模式</label><button class="secondary" id="test">测试</button><button class="primary" id="save">保存</button></div><p class="status" id="status"></p></div></section>`;
+  $('quick').closest('label').title = t(quickModeHint);
   let hotkey, origin = null, waiting = false, recording = false;
   function masked() { $('key').type = 'password'; $('eye').title = t('显示密钥'); $('eye').setAttribute('aria-label', t('显示密钥')); }
   async function load() {
@@ -126,6 +128,7 @@ if (view === 'main') {
   await load();
 } else if (view === 'menu') {
   root.innerHTML = `<section class="panel menu"><div id="menu-home"><button class="item" data-action="open">${icon('open')}打开随译</button><button class="item" data-action="settings">${icon('settings')}设置</button><button class="item" data-action="update">${icon('update')}检查更新</button><button class="item" id="languages-toggle" aria-controls="language-page" aria-expanded="false">${icon('language')}<span class="language-summary"><span class="language-caption">目标语言</span><span id="language-name"></span></span><span class="trailing">${icon('chevron')}</span></button><button class="item" id="themes-toggle">${icon('theme')}主题<span class="trailing" id="theme-name"></span></button><div class="themes" id="themes" hidden><div class="theme-grid" id="theme-grid"></div></div><hr><button class="item" data-action="quick">${icon('quick')}快速模式<input class="switch trailing" id="quick-state" type="checkbox" tabindex="-1" aria-label="快速模式状态"></button><button class="item" data-action="startup">${icon('startup')}开机启动<input class="switch trailing" id="startup-state" type="checkbox" tabindex="-1" aria-label="开机启动状态"></button><hr><button class="item" data-action="exit">${icon('exit')}退出</button></div><div id="language-page" hidden><div class="language-header">${icon('back', '返回', 'language-back')}<strong>目标语言</strong></div><div id="language-grid" class="language-grid" role="group" aria-label="目标语言"></div><p id="language-status" class="status error" role="status"></p></div></section>`;
+  document.querySelector('[data-action="quick"]').title = t(quickModeHint);
   let languagePending = false;
   function showHome(focus = true) {
     $('language-page').hidden = true; $('menu-home').hidden = false;
