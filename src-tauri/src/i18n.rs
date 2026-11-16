@@ -6,13 +6,15 @@ pub fn locale_from_language_id(id: u16) -> &'static str {
 
 pub fn locale() -> &'static str {
     static LOCALE: OnceLock<&'static str> = OnceLock::new();
-    LOCALE.get_or_init(|| {
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetUserDefaultUILanguage() -> u16;
-        }
-        locale_from_language_id(unsafe { GetUserDefaultUILanguage() })
-    })
+    LOCALE.get_or_init(|| locale_from_language_id(system_language_id()))
+}
+
+pub fn system_language_id() -> u16 {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetUserDefaultUILanguage() -> u16;
+    }
+    unsafe { GetUserDefaultUILanguage() }
 }
 
 pub fn messages() -> &'static BTreeMap<String, String> {

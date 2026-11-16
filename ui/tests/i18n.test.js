@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { createTranslator } from '../i18n.js';
 
 const messages = JSON.parse(fs.readFileSync(new URL('../../src-tauri/locales/en.json', import.meta.url), 'utf8'));
-test('interface language is independent of translation target and covers errors', () => {
+test('interface language is independent of translation languages and covers errors', () => {
   const en = createTranslator('en', messages), zh = createTranslator('zh-CN', messages);
   for (const [source, english] of Object.entries(messages)) {
     assert.equal(en(source), english);
@@ -24,7 +24,7 @@ test('localized dynamic messages preserve values without interpreting them', () 
 });
 test('every fixed backend diagnostic has an English translation', () => {
   const folder = new URL('../../src-tauri/src/', import.meta.url);
-  const examples = new Set(['你好，世界。', '第一行。\\n\\n第二行。']);
+  const examples = new Set(['你好，世界。', 'こんにちは、世界。', '第一行。\\n\\n第二行。']);
   for (const file of fs.readdirSync(folder).filter(f => f.endsWith('.rs') && !f.endsWith('_tests.rs'))) {
     const source = fs.readFileSync(new URL(file, folder), 'utf8').split('#[cfg(test)]')[0];
     for (const match of source.matchAll(/"([^"\n]*[\p{Script=Han}][^"\n]*。)"/gu)) {

@@ -23,8 +23,6 @@
   "模型": "Model",
   "模型名称": "Model name",
   "获取模型": "Fetch models",
-  "译为": "To",
-  "目标语言": "Target language",
   "英语": "English",
   "简体中文": "Simplified Chinese",
   "繁体中文": "Traditional Chinese",
@@ -205,5 +203,10 @@
   "系统未接受粘贴，请检查权限或手动粘贴。": "Windows rejected the paste. Check permissions or paste manually.",
   "随译未能启动。请确认 Microsoft WebView2 Runtime 已安装；推荐运行随译安装包，它会在缺少时自动下载安装该组件。": "Suiyi couldn't start. Make sure Microsoft WebView2 Runtime is installed. Run the Suiyi installer to install the runtime automatically if needed.",
   "返回": "Back",
-  "正在翻译或回填，请稍后切换目标语言。": "Translation or insertion is in progress. Change the target language when it finishes."
+  "主要语言": "Primary",
+  "常用外语": "Other",
+  "语言组合": "Languages",
+  "主要语言译为常用外语，其他语言译为主要语言。": "Primary → other language; all other languages → primary.",
+  "主要语言和常用外语请选择不同的语言。": "Choose two different languages.",
+  "正在翻译或回填，请稍后切换语言组合。": "Translation or insertion is in progress. Change languages when it finishes."
 }

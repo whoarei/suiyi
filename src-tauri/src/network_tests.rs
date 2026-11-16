@@ -152,8 +152,8 @@ async fn minimal_protocol_and_endpoint() {
     assert_eq!(body["messages"][1]["content"], "你好")
 }
 #[tokio::test]
-async fn target_language_reaches_request_and_preserves_multiline_contract() {
-    use crate::language::{LANGUAGES, TargetLanguage};
+async fn language_pair_reaches_request_and_preserves_multiline_contract() {
+    use crate::language::{LANGUAGES, LanguagePair, TargetLanguage};
     for language in LANGUAGES {
         let target: TargetLanguage = serde_json::from_value(json!(language.code)).unwrap();
         assert_eq!(target.definition().code, language.code);
@@ -163,7 +163,7 @@ async fn target_language_reaches_request_and_preserves_multiline_contract() {
         )]);
         let result = Provider::new(api::client(), &fake.url, "model", "")
             .unwrap()
-            .with_target_language(target)
+            .with_languages(LanguagePair::new(target, target.other_default()).unwrap())
             .translate("Hello\r\n\r\nworld", &CancellationToken::new())
             .await
             .unwrap();
@@ -172,11 +172,70 @@ async fn target_language_reaches_request_and_preserves_multiline_contract() {
         let body = &requests[0].1;
         assert_eq!(body.as_object().unwrap().len(), 3);
         let prompt = body["messages"][0]["content"].as_str().unwrap();
-        assert!(prompt.contains(&format!("into {}", language.prompt)));
+        assert!(prompt.contains(&format!("primary language is {}.", language.prompt)));
+        assert!(prompt.contains(&format!(
+            "other language is {}.",
+            target.other_default().definition().prompt
+        )));
+        assert!(prompt.contains("otherwise, including any third language"));
+        assert_eq!(requests.len(), 1);
         assert!(prompt.contains("exactly 3 strings"));
         assert_eq!(body["messages"][1]["content"], "Hello\r\n\r\nworld");
     }
 }
+#[tokio::test]
+async fn japanese_pair_sends_both_directions_and_third_language_in_one_request_each() {
+    use crate::language::{LanguagePair, TargetLanguage};
+    let sources = ["こんにちは、世界。", "Hello, world.", "你好，世界。"];
+    let outputs = ["Hello, world.", "こんにちは、世界。", "こんにちは、世界。"];
+    let fake = serve(
+        outputs
+            .iter()
+            .map(|text| response(200, translated(text)))
+            .collect(),
+    );
+    let pair = LanguagePair::new(TargetLanguage::Japanese, TargetLanguage::English).unwrap();
+    let provider = Provider::new(api::client(), &fake.url, "model", "")
+        .unwrap()
+        .with_languages(pair);
+    for (source, output) in sources.iter().zip(outputs) {
+        assert_eq!(
+            provider
+                .translate(source, &CancellationToken::new())
+                .await
+                .unwrap(),
+            output
+        );
+    }
+    let requests = fake.requests.lock().unwrap();
+    assert_eq!(requests.len(), sources.len());
+    for ((_, body), source) in requests.iter().zip(sources) {
+        assert_eq!(body["messages"][1]["content"], source);
+        let prompt = body["messages"][0]["content"].as_str().unwrap();
+        assert!(prompt.contains("If the source is mainly Japanese, translate all of it into English; otherwise, including any third language, translate all of it into Japanese."));
+        assert!(prompt.contains("distinguish Japanese from Chinese"));
+    }
+}
+
+#[tokio::test]
+async fn invalid_language_pair_is_rejected_before_network() {
+    use crate::language::{LanguagePair, TargetLanguage};
+    let fake = serve(vec![]);
+    let provider = Provider::new(api::client(), &fake.url, "model", "")
+        .unwrap()
+        .with_languages(LanguagePair {
+            primary: TargetLanguage::English,
+            secondary: TargetLanguage::English,
+        });
+    assert!(
+        provider
+            .translate("Hello", &CancellationToken::new())
+            .await
+            .is_err()
+    );
+    assert!(fake.requests.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn anonymous_endpoint_has_no_authorization() {
     let fake = serve(vec![response(200, translated("Hello"))]);

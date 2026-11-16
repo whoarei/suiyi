@@ -1,19 +1,48 @@
 use crate::ffi;
-use crate::language::TargetLanguage;
+use crate::language::{LanguagePair, TargetLanguage};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
 use winreg::{RegKey, enums::*};
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Config {
     pub version: u32,
     pub model: String,
     #[serde(default)]
     pub base_url: String,
-    #[serde(default, deserialize_with = "TargetLanguage::deserialize_or_default")]
-    pub target_language: TargetLanguage,
+    #[serde(
+        default = "TargetLanguage::primary_default",
+        deserialize_with = "TargetLanguage::deserialize_primary"
+    )]
+    pub primary_language: TargetLanguage,
+    #[serde(
+        default,
+        alias = "TargetLanguage",
+        deserialize_with = "TargetLanguage::deserialize_or_default"
+    )]
+    pub secondary_language: TargetLanguage,
+}
+impl Default for Config {
+    fn default() -> Self {
+        let languages = LanguagePair::default();
+        Self {
+            version: 3,
+            model: String::new(),
+            base_url: String::new(),
+            primary_language: languages.primary,
+            secondary_language: languages.secondary,
+        }
+    }
+}
+impl Config {
+    pub fn languages(&self) -> LanguagePair {
+        LanguagePair {
+            primary: self.primary_language,
+            secondary: self.secondary_language,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,9 +127,13 @@ impl Store {
         if config.version == 1 {
             config.base_url = "https://api.deepseek.com/".into();
         }
-        if !(config.version == 1 || config.version == 2) {
+        if !matches!(config.version, 1..=3) {
             return Config::default();
         }
+        if config.primary_language == config.secondary_language {
+            config.secondary_language = config.primary_language.other_default();
+        }
+        config.version = 3;
         if config.base_url.is_empty() && config.model.is_empty() {
             return config;
         }
@@ -144,12 +177,13 @@ impl Store {
         address: &str,
         model: &str,
         key: &str,
-        target_language: TargetLanguage,
+        languages: LanguagePair,
     ) -> Result<Config, String> {
+        languages.validate()?;
         if address.trim().is_empty() && model.trim().is_empty() && key.trim().is_empty() {
             let config = Config {
-                version: 2,
-                target_language,
+                primary_language: languages.primary,
+                secondary_language: languages.secondary,
                 ..Config::default()
             };
             self.atomic("settings.json", &serde_json::to_vec(&config).unwrap())?;
@@ -173,10 +207,11 @@ impl Store {
             )?
         }
         let config = Config {
-            version: 2,
+            version: 3,
             model,
             base_url,
-            target_language,
+            primary_language: languages.primary,
+            secondary_language: languages.secondary,
         };
         self.atomic("settings.json", &serde_json::to_vec(&config).unwrap())?;
         Ok(config)
@@ -185,14 +220,16 @@ impl Store {
         self.root
             .join(format!("api-{:x}.key", Sha256::digest(address.as_bytes())))
     }
-    pub fn save_target_language(
+    pub fn save_language_pair(
         &self,
         config: &Config,
-        target_language: TargetLanguage,
+        languages: LanguagePair,
     ) -> Result<Config, String> {
+        languages.validate()?;
         let next = Config {
-            version: 2,
-            target_language,
+            version: 3,
+            primary_language: languages.primary,
+            secondary_language: languages.secondary,
             ..config.clone()
         };
         self.atomic("settings.json", &serde_json::to_vec(&next).unwrap())?;
@@ -399,67 +436,97 @@ pub fn isolated_test_store() -> Store {
 mod tests {
     use super::*;
     #[test]
-    fn tray_language_switch_preserves_endpoint_model_and_encrypted_key() {
+    fn language_pair_switch_preserves_api_and_encrypted_key() {
         let s = isolated_test_store();
+        let original_pair =
+            LanguagePair::new(TargetLanguage::Japanese, TargetLanguage::English).unwrap();
         let original = s
             .save_config(
                 "https://one.example/v1",
                 "model:1",
                 "fake-test-key",
-                TargetLanguage::English,
+                original_pair,
             )
             .unwrap();
         let key_path = s.key_path(&original.base_url);
         let encrypted = fs::read(&key_path).unwrap();
-        let next = s
-            .save_target_language(&original, TargetLanguage::Arabic)
-            .unwrap();
+        let next_pair = LanguagePair::new(TargetLanguage::French, TargetLanguage::Arabic).unwrap();
+        let next = s.save_language_pair(&original, next_pair).unwrap();
         assert_eq!(next.base_url, original.base_url);
         assert_eq!(next.model, original.model);
-        assert_eq!(s.config().target_language, TargetLanguage::Arabic);
-        assert_eq!(fs::read(key_path).unwrap(), encrypted);
+        assert_eq!(s.config().languages(), next_pair);
+        assert_eq!(fs::read(&key_path).unwrap(), encrypted);
         assert_eq!(
             s.credential(&original.base_url, "").unwrap(),
             "fake-test-key"
         );
-        s.save_target_language(&Config::default(), TargetLanguage::Japanese)
+        let before = fs::read(s.root.join("settings.json")).unwrap();
+        let invalid = LanguagePair {
+            primary: TargetLanguage::English,
+            secondary: TargetLanguage::English,
+        };
+        assert!(s.save_language_pair(&next, invalid).is_err());
+        assert!(
+            s.save_config(&next.base_url, &next.model, "different-fake-key", invalid)
+                .is_err()
+        );
+        assert_eq!(fs::read(s.root.join("settings.json")).unwrap(), before);
+        assert_eq!(fs::read(key_path).unwrap(), encrypted);
+        s.save_language_pair(&Config::default(), original_pair)
             .unwrap();
-        assert_eq!(s.config().target_language, TargetLanguage::Japanese);
+        assert_eq!(s.config().languages(), original_pair);
+        assert!(s.config().base_url.is_empty());
         fs::remove_dir_all(s.root).unwrap();
     }
     #[test]
-    fn target_language_round_trip_and_legacy_default() {
+    fn legacy_target_migrates_to_pair_without_changing_api() {
         let s = isolated_test_store();
-        s.atomic(
-            "settings.json",
-            br#"{"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model"}"#,
-        )
-        .unwrap();
-        assert_eq!(s.config().target_language, TargetLanguage::English);
-        s.save_config(
-            "https://one.example/v1",
-            "legacy-model",
-            "",
-            TargetLanguage::Japanese,
-        )
-        .unwrap();
-        assert_eq!(s.config().target_language, TargetLanguage::Japanese);
-        assert_eq!(s.config().model, "legacy-model");
-        // A setting from a future version must not erase the endpoint and model.
-        s.atomic("settings.json", br#"{"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model","TargetLanguage":"future-language"}"#).unwrap();
-        assert_eq!(s.config().target_language, TargetLanguage::English);
-        assert_eq!(s.config().base_url, "https://one.example/v1/");
-        assert_eq!(s.config().model, "legacy-model");
-        // The target can also be saved before an API endpoint is configured.
-        s.save_config("", "", "", TargetLanguage::TraditionalChinese)
+        let primary = TargetLanguage::primary_default();
+        let secondary = primary.other_default();
+        let old = serde_json::json!({"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model","TargetLanguage":secondary});
+        s.atomic("settings.json", &serde_json::to_vec(&old).unwrap())
             .unwrap();
-        let raw: Config =
+        let loaded = s.config();
+        assert_eq!(loaded.primary_language, primary);
+        assert_eq!(loaded.secondary_language, secondary);
+        assert_eq!(loaded.base_url, "https://one.example/v1/");
+        assert_eq!(loaded.model, "legacy-model");
+        let pair = LanguagePair::new(TargetLanguage::Japanese, TargetLanguage::English).unwrap();
+        s.save_config(&loaded.base_url, &loaded.model, "", pair)
+            .unwrap();
+        assert_eq!(s.config().languages(), pair);
+        let raw: serde_json::Value =
             serde_json::from_slice(&fs::read(s.root.join("settings.json")).unwrap()).unwrap();
-        assert_eq!(raw.target_language, TargetLanguage::TraditionalChinese);
-        assert_eq!(
-            s.config().target_language,
-            TargetLanguage::TraditionalChinese
-        );
+        assert_eq!(raw["Version"], 3);
+        assert_eq!(raw["PrimaryLanguage"], "ja");
+        assert_eq!(raw["SecondaryLanguage"], "en");
+        assert!(raw.get("TargetLanguage").is_none());
+        fs::remove_dir_all(s.root).unwrap();
+    }
+    #[test]
+    fn missing_unknown_or_duplicate_languages_recover_without_losing_api() {
+        let s = isolated_test_store();
+        for extra in [
+            serde_json::json!({}),
+            serde_json::json!({"TargetLanguage":"future-language"}),
+            serde_json::json!({"PrimaryLanguage":"unknown","SecondaryLanguage":"unknown"}),
+            serde_json::json!({"PrimaryLanguage":"en","SecondaryLanguage":"en"}),
+        ] {
+            let mut raw = serde_json::json!({"Version":2,"BaseUrl":"https://one.example/v1","Model":"legacy-model"});
+            raw.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            s.atomic("settings.json", &serde_json::to_vec(&raw).unwrap())
+                .unwrap();
+            let config = s.config();
+            assert!(config.languages().validate().is_ok());
+            assert_eq!(config.base_url, "https://one.example/v1/");
+            assert_eq!(config.model, "legacy-model");
+        }
+        let pair =
+            LanguagePair::new(TargetLanguage::English, TargetLanguage::TraditionalChinese).unwrap();
+        s.save_config("", "", "", pair).unwrap();
+        assert_eq!(s.config().languages(), pair);
         fs::remove_dir_all(s.root).unwrap();
     }
     #[test]
@@ -509,7 +576,7 @@ mod tests {
             "https://one.example/v1",
             "model:1",
             "fake-test-key",
-            TargetLanguage::English,
+            LanguagePair::new(TargetLanguage::Japanese, TargetLanguage::English).unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -538,10 +605,10 @@ mod tests {
             &s.config().base_url,
             "legacy-model",
             "",
-            TargetLanguage::English,
+            LanguagePair::new(TargetLanguage::Japanese, TargetLanguage::English).unwrap(),
         )
         .unwrap();
-        assert_eq!(s.config().version, 2);
+        assert_eq!(s.config().version, 3);
         fs::remove_dir_all(s.root).unwrap()
     }
     #[test]

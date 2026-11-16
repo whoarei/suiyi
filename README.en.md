@@ -24,7 +24,7 @@ With no selection or usable input field, the same shortcut opens the translation
 - **Translation popup**: translate as you type, edit the result, then insert or copy it.
 - **Across applications**: insert at the cursor or replace a selection in supported chat apps, browsers, and editors.
 - **Flexible translation APIs**: use an OpenAI-compatible Chat Completions service, choose your model, and fetch available model IDs.
-- **Languages**: automatic source detection and 12 target languages, switchable from the tray, with English as the default. The Chinese or English interface follows Windows automatically.
+- **Smart translation**: choose a primary and another language from 12 options. Primary-language text goes to the other language; all other languages go to your primary language. Adjust the pair from the tray. The Chinese or English interface follows Windows automatically.
 - **Ready when you are**: customizable shortcut, tray controls, and startup at login.
 - **Color themes**: 10 accent colors, orange by default. Light and dark modes follow Windows, with matching window, taskbar, and tray icons.
 - **Local encryption**: API keys are encrypted for your Windows user and stored separately for each API endpoint.

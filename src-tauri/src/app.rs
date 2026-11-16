@@ -1,7 +1,7 @@
 use crate::{
     api::{self, Provider},
     i18n,
-    language::{LANGUAGES, TargetLanguage},
+    language::{LANGUAGES, LanguagePair, TargetLanguage},
     native::{self, HotkeyWorker, Receipt, Target},
     store::{Config, Hotkey, Preferences, Store},
     theme, update,
@@ -111,8 +111,11 @@ fn config_changed(app: &AppHandle, state: &Runtime) {
         cache.values.clear();
         cache.order.clear();
     }
-    let target = state.config.lock().unwrap().target_language;
-    let _ = app.emit("config-changed", json!({"targetLanguage": target}));
+    let languages = state.config.lock().unwrap().languages();
+    let _ = app.emit(
+        "config-changed",
+        json!({"primaryLanguage": languages.primary, "secondaryLanguage": languages.secondary}),
+    );
 }
 fn provider(state: &Runtime, address: &str, model: &str, key: &str) -> Result<Provider, String> {
     Provider::new(
@@ -125,7 +128,7 @@ fn provider(state: &Runtime, address: &str, model: &str, key: &str) -> Result<Pr
 fn active_provider(state: &Runtime) -> Result<Provider, String> {
     let config = state.config.lock().unwrap().clone();
     provider(state, &config.base_url, &config.model, "")
-        .map(|provider| provider.with_target_language(config.target_language))
+        .map(|provider| provider.with_languages(config.languages()))
         .map_err(|_| "请先从托盘设置翻译接口和模型。".into())
 }
 fn refresh_theme(app: &AppHandle) {
@@ -365,7 +368,7 @@ fn boot(window: WebviewWindow, state: State<Runtime>) -> Result<Value, String> {
             .credential(&config.base_url, "")
             .is_ok_and(|k| !k.is_empty());
     Ok(
-        json!({"version":env!("SUIYI_VERSION"),"locale":i18n::locale(),"messages":i18n::messages(),"languages":LANGUAGES,"preferences":p,"colors":theme::colors(&state.prefs.lock().unwrap().theme,theme::dark()),"palettes":theme::PALETTES,"config":{"address":config.base_url,"model":config.model,"hasKey":has_key,"targetLanguage":config.target_language},"context":if window.label()=="main"{serde_json::to_value(&*state.context.lock().unwrap()).unwrap()}else{Value::Null}}),
+        json!({"version":env!("SUIYI_VERSION"),"locale":i18n::locale(),"messages":i18n::messages(),"languages":LANGUAGES,"preferences":p,"colors":theme::colors(&state.prefs.lock().unwrap().theme,theme::dark()),"palettes":theme::PALETTES,"config":{"address":config.base_url,"model":config.model,"hasKey":has_key,"primaryLanguage":config.primary_language,"secondaryLanguage":config.secondary_language},"context":if window.label()=="main"{serde_json::to_value(&*state.context.lock().unwrap()).unwrap()}else{Value::Null}}),
     )
 }
 #[tauri::command]
@@ -387,7 +390,7 @@ async fn translate(
 ) -> Result<String, String> {
     role(&window, &["main"])?;
     let provider = active_provider(&state)?;
-    let cache_key = format!("{}\0{text}", provider.target_language.definition().code);
+    let cache_key = provider.languages.cache_key(&text);
     cancel_normal(&state, true);
     let generation = state.generation.load(Ordering::SeqCst);
     state.normal_serial.store(serial, Ordering::SeqCst);
@@ -517,8 +520,8 @@ pub struct SettingsInput {
     key: String,
     hotkey: Hotkey,
     quick_mode: bool,
-    #[serde(default)]
-    target_language: TargetLanguage,
+    primary_language: TargetLanguage,
+    secondary_language: TargetLanguage,
 }
 #[tauri::command]
 fn save_settings(
@@ -531,6 +534,7 @@ fn save_settings(
     if !input.hotkey.valid() {
         return Err("请使用 Ctrl 或 Alt，搭配字母、数字或 F1–F12。".into());
     }
+    let languages = LanguagePair::new(input.primary_language, input.secondary_language)?;
     let old = state.prefs.lock().unwrap().clone();
     let worker = state.hotkey.lock().unwrap();
     if worker.as_ref().is_some_and(|w| !w.set(input.hotkey)) {
@@ -541,18 +545,17 @@ fn save_settings(
         prefs.hotkey = input.hotkey;
         prefs.quick_mode = input.quick_mode;
         state.store.save_preferences(&prefs)?;
-        let config = match state.store.save_config(
-            &input.address,
-            &input.model,
-            &input.key,
-            input.target_language,
-        ) {
-            Ok(config) => config,
-            Err(error) => {
-                let _ = state.store.save_preferences(&old);
-                return Err(error);
-            }
-        };
+        let config =
+            match state
+                .store
+                .save_config(&input.address, &input.model, &input.key, languages)
+            {
+                Ok(config) => config,
+                Err(error) => {
+                    let _ = state.store.save_preferences(&old);
+                    return Err(error);
+                }
+            };
         *state.config.lock().unwrap() = config;
         *state.prefs.lock().unwrap() = prefs;
         Ok(())
@@ -568,28 +571,30 @@ fn save_settings(
     Ok(())
 }
 #[tauri::command]
-fn set_target_language(
+fn set_language_pair(
     window: WebviewWindow,
     app: AppHandle,
     state: State<Runtime>,
-    target_language: TargetLanguage,
+    primary_language: TargetLanguage,
+    secondary_language: TargetLanguage,
 ) -> Result<(), String> {
     role(&window, &["menu"])?;
+    let languages = LanguagePair::new(primary_language, secondary_language)?;
     if state
         .busy
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Err("正在翻译或回填，请稍后切换目标语言。".into());
+        return Err("正在翻译或回填，请稍后切换语言组合。".into());
     }
     let result = (|| {
         let mut config = state.config.lock().unwrap();
-        if config.target_language == target_language {
+        if config.languages() == languages {
             return Ok(());
         }
-        *config = state.store.save_target_language(&config, target_language)?;
+        *config = state.store.save_language_pair(&config, languages)?;
         drop(config);
-        // Stop settings tests that still use the previous target, retaining the draft fields.
+        // Stop settings tests that still use the previous language pair, retaining the draft fields.
         let mut pending = state.settings_cancel.lock().unwrap();
         pending.cancel();
         *pending = CancellationToken::new();
@@ -645,17 +650,26 @@ async fn test_connection(
     address: String,
     model: String,
     key: String,
-    target_language: TargetLanguage,
+    primary_language: TargetLanguage,
+    secondary_language: TargetLanguage,
 ) -> Result<(), String> {
     role(&window, &["settings"])?;
-    let provider = provider(&state, &address, &model, &key)?.with_target_language(target_language);
+    let languages = LanguagePair::new(primary_language, secondary_language)?;
+    let provider = provider(&state, &address, &model, &key)?.with_languages(languages);
     let cancel = state.settings_cancel.lock().unwrap().clone();
     provider
-        .translate("你好，世界。", &cancel)
+        .translate(languages.primary.sample(), &cancel)
         .await
         .map_err(|e| e.message)?;
     provider
-        .translate("第一行。\n\n第二行。", &cancel)
+        .translate(
+            &format!(
+                "{}\n\n{}",
+                languages.secondary.sample(),
+                languages.secondary.sample()
+            ),
+            &cancel,
+        )
         .await
         .map_err(|e| e.message)?;
     Ok(())
@@ -895,7 +909,7 @@ pub fn run() {
             cancel_translation,
             output,
             save_settings,
-            set_target_language,
+            set_language_pair,
             reveal_key,
             record_shortcut,
             models,

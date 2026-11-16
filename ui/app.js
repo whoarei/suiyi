@@ -1,5 +1,6 @@
 import { TranslationSession, hotkeyFromEvent, displayHotkey } from './controller.js';
 import { createTranslator, localizeElement } from './i18n.js';
+import { changeLanguagePair, formatLanguagePair } from './languages.js';
 let t = (source) => source;
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -8,6 +9,23 @@ const view = new URLSearchParams(location.search).get('view') || 'main';
 const root = document.querySelector('#app');
 const $ = (id) => document.getElementById(id);
 const quickModeHint = '选中文字时直接替换；无选区或输入框时打开翻译框。关闭后始终打开翻译框。';
+const pairHint = '主要语言译为常用外语，其他语言译为主要语言。';
+function languagePairInputs(primaryId, secondaryId) {
+  let pair;
+  const fields = { primaryLanguage: $(primaryId), secondaryLanguage: $(secondaryId) };
+  function set(config) {
+    pair = { primaryLanguage: config.primaryLanguage, secondaryLanguage: config.secondaryLanguage };
+    for (const [field, select] of Object.entries(fields)) select.value = pair[field];
+  }
+  for (const [field, select] of Object.entries(fields)) {
+    select.replaceChildren(...bootData.languages.map(({ code, name }) => {
+      const option = document.createElement('option'); option.value = code; option.textContent = t(name); return option;
+    }));
+    select.onchange = () => set(changeLanguagePair(pair, field, select.value));
+  }
+  set(bootData.config);
+  return { set, value: () => ({ ...pair }) };
+}
 const paths = {
   language: '<path d="M3 5h12M9 3v2M5 8c1 5 4 8 8 10M13 5c-1 6-5 11-10 13M14 21l4-10 4 10m-6-4h4"/>', back: '<path d="M19 12H5m7-7-7 7 7 7"/>', chevron: '<path d="m9 5 7 7-7 7"/>',
   close: '<path d="m5 5 14 14M19 5 5 19"/>', copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
@@ -40,7 +58,7 @@ new ResizeObserver(fit).observe(root);
 await boot();
 
 if (view === 'main') {
-  root.innerHTML = `<section class="panel popup"><header class="header"><span></span>${icon('close', '收起', 'close')}</header><div class="body"><textarea id="source" dir="auto" class="field" maxlength="2000" placeholder="输入文字…" aria-label="原文"></textarea><textarea id="result" dir="auto" class="field result" maxlength="8000" placeholder="译文" aria-label="译文" readonly></textarea><div class="toolbar"><span class="target" id="target"></span>${icon('settings', '设置', 'settings')}${icon('copy', '复制译文', 'copy')}<button id="primary" class="primary" disabled>复制</button></div><p class="status" id="status"></p><button id="retry" class="secondary hidden">重试</button></div></section>`;
+  root.innerHTML = `<section class="panel popup"><header class="header"><span id="translation-languages" class="direction"></span>${icon('close', '收起', 'close')}</header><div class="body"><textarea id="source" dir="auto" class="field" maxlength="2000" placeholder="输入文字…" aria-label="原文"></textarea><textarea id="result" dir="auto" class="field result" maxlength="8000" placeholder="译文" aria-label="译文" readonly></textarea><div class="toolbar"><span class="target" id="target"></span>${icon('settings', '设置', 'settings')}${icon('copy', '复制译文', 'copy')}<button id="primary" class="primary" disabled>复制</button></div><p class="status" id="status"></p><button id="retry" class="secondary hidden">重试</button></div></section>`;
   let context = bootData.context || {}, selectionDraft = false, busy = false, resultComposing = false;
   const session = new TranslationSession(invoke, (s) => {
     if (!resultComposing && $('result').value !== s.result) $('result').value = s.result;
@@ -83,24 +101,27 @@ if (view === 'main') {
   document.addEventListener('keydown', (event) => { if (event.ctrlKey && event.key === 'Enter' && !event.isComposing) { event.preventDefault(); output(); } });
   await listen('open', (event) => open(event.payload));
   await listen('clear', () => { $('source').value = ''; selectionDraft = false; session.clear(); });
-  await listen('config-changed', () => { session.update(session.source); });
+  function renderLanguages(config) { $('translation-languages').textContent = formatLanguagePair(config, bootData.languages, t); $('translation-languages').title = t(pairHint); }
+  renderLanguages(bootData.config);
+  await listen('config-changed', ({ payload }) => { renderLanguages(payload); session.update(session.source); });
   window.addEventListener('blur', () => { if (!busy) { session.suspend(); context.hasTarget = false; } });
   window.addEventListener('focus', () => { if (!session.suspended) return; session.resume(); });
   wireFrame(); open(context);
 } else if (view === 'settings') {
-  root.innerHTML = `<section class="panel settings">${header('设置')}<div class="body"><div class="row"><label for="address">API</label><div class="field input-group"><input id="address" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false"></div></div><div class="row"><label for="key">Key</label><div class="field input-group"><input id="key" type="password" placeholder="API Key" autocomplete="off" spellcheck="false">${icon('eye', '显示密钥', 'eye')}</div></div><div class="row"><label for="model">模型</label><div class="field input-group"><input id="model" placeholder="模型名称" autocomplete="off" spellcheck="false">${icon('download', '获取模型', 'models')}<div class="model-options hidden" id="model-options"></div></div></div><div class="row"><label for="target-language">译为</label><div class="field input-group"><select id="target-language" aria-label="目标语言"></select></div></div><div class="row"><label for="shortcut">快捷键</label><div class="field input-group"><button id="shortcut" class="hotkey" title="点击后按下新组合键"></button>${icon('reset', '恢复默认快捷键', 'reset')}</div></div><div class="settings-bottom"><label class="switch-label"><input id="quick" class="switch" type="checkbox">快速模式</label><button class="secondary" id="test">测试</button><button class="primary" id="save">保存</button></div><p class="status" id="status"></p></div></section>`;
+  root.innerHTML = `<section class="panel settings">${header('设置')}<div class="body"><div class="row"><label for="address">API</label><div class="field input-group"><input id="address" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false"></div></div><div class="row"><label for="key">Key</label><div class="field input-group"><input id="key" type="password" placeholder="API Key" autocomplete="off" spellcheck="false">${icon('eye', '显示密钥', 'eye')}</div></div><div class="row"><label for="model">模型</label><div class="field input-group"><input id="model" placeholder="模型名称" autocomplete="off" spellcheck="false">${icon('download', '获取模型', 'models')}<div class="model-options hidden" id="model-options"></div></div></div><div class="row"><label for="primary-language">主要语言</label><div class="field input-group"><select id="primary-language" aria-label="主要语言"></select></div></div><div class="row"><label for="secondary-language">常用外语</label><div class="field input-group"><select id="secondary-language" aria-label="常用外语"></select></div></div><div class="row"><label for="shortcut">快捷键</label><div class="field input-group"><button id="shortcut" class="hotkey" title="点击后按下新组合键"></button>${icon('reset', '恢复默认快捷键', 'reset')}</div></div><div class="settings-bottom"><label class="switch-label"><input id="quick" class="switch" type="checkbox">快速模式</label><button class="secondary" id="test">测试</button><button class="primary" id="save">保存</button></div><p class="status" id="status"></p></div></section>`;
   $('quick').closest('label').title = t(quickModeHint);
+  const languageEditor = languagePairInputs('primary-language', 'secondary-language');
+  $('primary-language').title = $('secondary-language').title = t(pairHint);
   let hotkey, origin = null, waiting = false, recording = false;
   function masked() { $('key').type = 'password'; $('eye').title = t('显示密钥'); $('eye').setAttribute('aria-label', t('显示密钥')); }
   async function load() {
     const data = await boot(); $('address').value = data.config.address; $('model').value = data.config.model;
     $('key').value = ''; $('key').placeholder = t(data.config.hasKey ? '已保存，留空保留' : 'API Key');
-    $('target-language').replaceChildren(...data.languages.map(({ code, name }) => { const option = document.createElement('option'); option.value = code; option.textContent = t(name); return option; }));
-    $('target-language').value = data.config.targetLanguage || 'en';
+    languageEditor.set(data.config);
     hotkey = data.preferences.hotkey; $('shortcut').textContent = displayHotkey(hotkey); $('quick').checked = data.preferences.quickMode;
     origin = null; masked(); status(''); $('model-options').classList.add('hidden');
   }
-  function input() { return { address: $('address').value.trim(), model: $('model').value.trim(), key: $('key').value, hotkey, quickMode: $('quick').checked, targetLanguage: $('target-language').value }; }
+  function input() { return { address: $('address').value.trim(), model: $('model').value.trim(), key: $('key').value, hotkey, quickMode: $('quick').checked, ...languageEditor.value() }; }
   async function request(task) {
     if (waiting) return; waiting = true;
     document.querySelectorAll('.row input,.row button,.row select,#test,#save,#quick').forEach((el) => el.disabled = true); status('正在连接…');
@@ -117,31 +138,32 @@ if (view === 'main') {
   $('shortcut').addEventListener('blur', async () => { recording = false; $('shortcut').textContent = displayHotkey(hotkey); const restored = await invoke('record_shortcut', { recording: false }); if (!restored) status('快捷键暂时被占用，请更换后保存。', true); });
   $('reset').onclick = () => { hotkey = { modifiers: 3, virtualKey: 0x54 }; $('shortcut').textContent = displayHotkey(hotkey); };
   $('models').onclick = () => request(async () => { const { address, key } = input(); const models = await invoke('models', { address, key }); const list = $('model-options'); list.replaceChildren(); for (const model of models) { const button = document.createElement('button'); button.textContent = model; button.onclick = () => { $('model').value = model; list.classList.add('hidden'); }; list.append(button); } list.classList.toggle('hidden', !models.length); status(models.length ? t('已获取 {count} 个模型', { count: models.length }) : '未返回模型，可手动填写。'); });
-  $('test').onclick = () => request(async () => { const { address, model, key, targetLanguage } = input(); await invoke('test_connection', { address, model, key, targetLanguage }); status('测试通过'); });
+  $('test').onclick = () => request(async () => { const { address, model, key, primaryLanguage, secondaryLanguage } = input(); await invoke('test_connection', { address, model, key, primaryLanguage, secondaryLanguage }); status('测试通过'); });
   $('save').onclick = async () => { if (waiting || recording) return; try { await invoke('save_settings', { input: input() }); $('key').value = ''; masked(); await hide(); } catch (error) { status(String(error), true); } };
   window.addEventListener('blur', masked);
   await listen('settings-open', load);
-  await listen('config-changed', ({ payload }) => { if (payload?.targetLanguage) $('target-language').value = payload.targetLanguage; });
+  await listen('config-changed', ({ payload }) => languageEditor.set(payload));
   await listen('settings-closed', () => { $('key').value = ''; origin = null; masked(); });
   wireFrame(); $('close').addEventListener('click', () => { $('key').value = ''; origin = null; masked(); });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { $('key').value = ''; masked(); } });
   await load();
 } else if (view === 'menu') {
-  root.innerHTML = `<section class="panel menu"><div id="menu-home"><button class="item" data-action="open">${icon('open')}打开随译</button><button class="item" data-action="settings">${icon('settings')}设置</button><button class="item" data-action="update">${icon('update')}检查更新</button><button class="item" id="languages-toggle" aria-controls="language-page" aria-expanded="false">${icon('language')}<span class="language-summary"><span class="language-caption">目标语言</span><span id="language-name"></span></span><span class="trailing">${icon('chevron')}</span></button><button class="item" id="themes-toggle">${icon('theme')}主题<span class="trailing" id="theme-name"></span></button><div class="themes" id="themes" hidden><div class="theme-grid" id="theme-grid"></div></div><hr><button class="item" data-action="quick">${icon('quick')}快速模式<input class="switch trailing" id="quick-state" type="checkbox" tabindex="-1" aria-label="快速模式状态"></button><button class="item" data-action="startup">${icon('startup')}开机启动<input class="switch trailing" id="startup-state" type="checkbox" tabindex="-1" aria-label="开机启动状态"></button><hr><button class="item" data-action="exit">${icon('exit')}退出</button></div><div id="language-page" hidden><div class="language-header">${icon('back', '返回', 'language-back')}<strong>目标语言</strong></div><div id="language-grid" class="language-grid" role="group" aria-label="目标语言"></div><p id="language-status" class="status error" role="status"></p></div></section>`;
+  root.innerHTML = `<section class="panel menu"><div id="menu-home"><button class="item" data-action="open">${icon('open')}打开随译</button><button class="item" data-action="settings">${icon('settings')}设置</button><button class="item" data-action="update">${icon('update')}检查更新</button><button class="item" id="languages-toggle" aria-controls="language-page" aria-expanded="false">${icon('language')}<span class="language-summary"><span class="language-caption">语言组合</span><span id="language-name"></span></span><span class="trailing">${icon('chevron')}</span></button><button class="item" id="themes-toggle">${icon('theme')}主题<span class="trailing" id="theme-name"></span></button><div class="themes" id="themes" hidden><div class="theme-grid" id="theme-grid"></div></div><hr><button class="item" data-action="quick">${icon('quick')}快速模式<input class="switch trailing" id="quick-state" type="checkbox" tabindex="-1" aria-label="快速模式状态"></button><button class="item" data-action="startup">${icon('startup')}开机启动<input class="switch trailing" id="startup-state" type="checkbox" tabindex="-1" aria-label="开机启动状态"></button><hr><button class="item" data-action="exit">${icon('exit')}退出</button></div><div id="language-page" hidden><div class="language-header">${icon('back', '返回', 'language-back')}<strong>语言组合</strong></div><div class="language-pair-fields"><label for="menu-primary">主要语言</label><div class="field input-group"><select id="menu-primary" aria-label="主要语言"></select></div><label for="menu-secondary">常用外语</label><div class="field input-group"><select id="menu-secondary" aria-label="常用外语"></select></div><p class="status">主要语言译为常用外语，其他语言译为主要语言。</p><button id="language-save" class="primary">保存</button></div><p id="language-status" class="status error" role="status"></p></div></section>`;
   document.querySelector('[data-action="quick"]').title = t(quickModeHint);
+  const languageEditor = languagePairInputs('menu-primary', 'menu-secondary');
   let languagePending = false;
   function showHome(focus = true) {
     $('language-page').hidden = true; $('menu-home').hidden = false;
     $('languages-toggle').setAttribute('aria-expanded', 'false');
     if (focus) $('languages-toggle').focus(); fit();
   }
-  async function selectLanguage(targetLanguage) {
+  async function saveLanguages() {
     if (languagePending) return;
     languagePending = true; $('language-status').textContent = '';
-    $('language-grid').querySelectorAll('button').forEach(button => button.disabled = true);
-    try { await invoke('set_target_language', { targetLanguage }); }
+    document.querySelectorAll('#menu-primary,#menu-secondary,#language-save').forEach(button => button.disabled = true);
+    try { await invoke('set_language_pair', languageEditor.value()); }
     catch (error) { $('language-status').textContent = t(String(error)); }
-    finally { languagePending = false; $('language-grid').querySelectorAll('button').forEach(button => button.disabled = false); fit(); }
+    finally { languagePending = false; document.querySelectorAll('#menu-primary,#menu-secondary,#language-save').forEach(button => button.disabled = false); fit(); }
   }
   async function render() {
     const data = await boot();
@@ -153,14 +175,9 @@ if (view === 'main') {
       button.style.setProperty('--swatch', color); button.title = t(name); button.setAttribute('aria-label', t(name));
       button.onclick = () => invoke('action', { name: 'theme', value: id }); grid.append(button);
     }
-    const current = data.config.targetLanguage || 'en';
-    $('language-name').textContent = t(data.languages.find(language => language.code === current)?.name || '英语');
-    const list = $('language-grid'); list.replaceChildren();
-    for (const { code, name } of data.languages) {
-      const button = document.createElement('button'); button.className = `language-option${code === current ? ' selected' : ''}`;
-      button.textContent = t(name); button.dataset.language = code; button.setAttribute('aria-pressed', String(code === current));
-      button.disabled = languagePending; button.onclick = () => selectLanguage(code); list.append(button);
-    }
+    const summary = formatLanguagePair(data.config, data.languages, t);
+    $('language-name').textContent = summary; $('languages-toggle').title = summary;
+    languageEditor.set(data.config);
     fit();
   }
   document.querySelectorAll('[data-action]').forEach(button => button.onclick = () => invoke('action', { name: button.dataset.action }).catch(() => console.warn('操作未完成')));
@@ -168,9 +185,10 @@ if (view === 'main') {
   $('languages-toggle').onclick = async () => {
     $('themes').hidden = true; $('language-status').textContent = '';
     $('menu-home').hidden = true; $('language-page').hidden = false; $('languages-toggle').setAttribute('aria-expanded', 'true');
-    await render(); $('language-grid').querySelector('[aria-pressed="true"]')?.focus(); fit();
+    await render(); $('menu-primary').focus(); fit();
   };
   $('language-back').onclick = () => showHome();
+  $('language-save').onclick = saveLanguages;
   await listen('menu-open', () => { showHome(false); $('themes').hidden = true; $('language-status').textContent = ''; render(); });
   await listen('preferences-changed', render); await listen('config-changed', render); await render();
   document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); if (!$('language-page').hidden) showHome(); else hide(); } });

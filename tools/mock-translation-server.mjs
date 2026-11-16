@@ -17,7 +17,13 @@ http.createServer(async (request, response) => {
   try { body = JSON.parse(Buffer.concat(chunks)); } catch { response.statusCode = 400; return response.end('{}'); }
   const text = body.messages?.find((m) => m.role === 'user')?.content || '';
   const prompt = body.messages?.find((m) => m.role === 'system')?.content || '';
-  const target = /translate the user's text into ([^.]+)\./i.exec(prompt)?.[1] || 'English';
+  const primary = /primary language is ([^.]+)\./.exec(prompt)?.[1] || 'Simplified Chinese';
+  const secondary = /other language is ([^.]+)\./.exec(prompt)?.[1] || 'English';
+  // Deterministic fixture samples, not a production language detector.
+  const samples = { 'こんにちは、世界。':'Japanese', '明日は休みです。':'Japanese', 'Bonjour le monde.':'French', 'Hallo, Welt.':'German', 'Hola, mundo.':'Spanish', 'Olá, mundo.':'Portuguese', 'Привет, мир.':'Russian', 'Ciao, mondo.':'Italian', '안녕하세요, 세계.':'Korean', 'مرحبا بالعالم.':'Arabic' };
+  const source = Object.entries(samples).find(([sample]) => text.includes(sample))?.[1] || (/[\p{Script=Han}]/u.test(text) ? 'Simplified Chinese' : 'English');
+  const same = source === primary || (source.includes('Chinese') && primary.includes('Chinese'));
+  const target = same ? secondary : primary;
   process.stdout.write(`Fixture target language: ${target}\n`);
   if (text.includes('失败')) { response.statusCode = 429; response.setHeader('retry-after', '1'); return response.end(JSON.stringify({ error: { message: 'fixture only' } })); }
   if (text.includes('慢')) await new Promise((r) => setTimeout(r, 2000));
