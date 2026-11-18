@@ -167,7 +167,7 @@ fn show(app: &AppHandle, label: &str, near_cursor: bool) {
                     .unwrap_or(tauri::PhysicalSize::new(244, 322));
                 native::placement_physical(size.width as i32, size.height as i32)
             } else {
-                native::placement(440, 330)
+                native::placement(400, 310)
             };
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
@@ -928,7 +928,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             for (label, title, width, height) in [
-                ("main", "随译", 440., 330.),
+                ("main", "随译", 400., 310.),
                 ("settings", "随译 · 设置", 420., 392.),
                 ("menu", "随译 · 托盘", 244., 322.),
                 ("notice", "随译 · 提示", 360., 96.),
@@ -964,8 +964,8 @@ pub fn run() {
                 let handle = app.handle().clone();
                 let label = label.to_string();
                 window.on_window_event(move |event| match event {
-                    WindowEvent::Resized(_) if label == "menu" => {
-                        if let Some(w) = handle.get_webview_window("menu")
+                    WindowEvent::Resized(_) if matches!(label.as_str(), "main" | "menu") => {
+                        if let Some(w) = handle.get_webview_window(&label)
                             && let (Ok(position), Ok(size)) = (w.outer_position(), w.outer_size())
                         {
                             let (x, y) = native::keep_on_screen(

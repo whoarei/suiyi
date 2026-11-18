@@ -29,6 +29,7 @@ function languagePairInputs(primaryId, secondaryId) {
 const paths = {
   language: '<path d="M3 5h12M9 3v2M5 8c1 5 4 8 8 10M13 5c-1 6-5 11-10 13M14 21l4-10 4 10m-6-4h4"/>', back: '<path d="M19 12H5m7-7-7 7 7 7"/>', chevron: '<path d="m9 5 7 7-7 7"/>',
   close: '<path d="m5 5 14 14M19 5 5 19"/>', copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+  check: '<path d="m5 12 4 4L19 6"/>', down: '<path d="m6 9 6 6 6-6"/>',
   settings: '<path d="m9 3-1 3-3 1 1 3-2 2 2 3-1 2 3 1 1 3h6l1-3 3-1-1-2 2-3-2-2 1-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',
   eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>', reset: '<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>',
@@ -50,60 +51,167 @@ function wireFrame() {
 }
 // Observe content instead of assigning a fixed height so error messages never clip.
 function fit() {
-  const width = { main: 440, settings: 420, menu: 244, notice: 360, update: 420 }[view];
   const panel = document.querySelector('.panel');
-  if (panel) currentWindow.setSize(new window.__TAURI__.dpi.LogicalSize(width, Math.ceil(panel.getBoundingClientRect().height))).catch(() => {});
+  if (!panel) return;
+  const bounds = panel.getBoundingClientRect();
+  const width = view === 'main' ? bounds.width : { settings: 420, menu: 244, notice: 360, update: 420 }[view];
+  const height = Math.ceil(bounds.height);
+  if (width !== window.innerWidth || height !== window.innerHeight) {
+    currentWindow.setSize(new window.__TAURI__.dpi.LogicalSize(width, height)).catch(() => {});
+  }
 }
 new ResizeObserver(fit).observe(root);
 await boot();
 
 if (view === 'main') {
-  root.innerHTML = `<section class="panel popup"><header class="header"><span id="translation-languages" class="direction"></span>${icon('close', '收起', 'close')}</header><div class="body"><textarea id="source" dir="auto" class="field" maxlength="2000" placeholder="输入文字…" aria-label="原文"></textarea><textarea id="result" dir="auto" class="field result" maxlength="8000" placeholder="译文" aria-label="译文" readonly></textarea><div class="toolbar"><span class="target" id="target"></span>${icon('settings', '设置', 'settings')}${icon('copy', '复制译文', 'copy')}<button id="primary" class="primary" disabled>复制</button></div><p class="status" id="status"></p><button id="retry" class="secondary hidden">重试</button></div></section>`;
-  let context = bootData.context || {}, selectionDraft = false, busy = false, resultComposing = false;
+  root.innerHTML = `
+    <section id="popup" class="panel popup" tabindex="-1" aria-label="翻译浮窗">
+      <header class="header">
+        <span id="translation-languages" class="direction"></span>
+        ${icon('close', '收起', 'close')}
+      </header>
+      <div class="body">
+        <div class="popup-content">
+          <div id="source-section" class="popup-source">
+            <span id="source-languages" class="direction" hidden></span>
+            <textarea id="source" class="popup-text" rows="1" dir="auto" maxlength="2000" placeholder="输入文字…" aria-label="原文"></textarea>
+          </div>
+          <div id="result-section" class="popup-translation" hidden>
+            <textarea id="result" class="popup-text" rows="1" dir="auto" maxlength="8000" placeholder="译文" aria-label="译文" readonly></textarea>
+          </div>
+        </div>
+        <div id="toolbar" class="toolbar" hidden>
+          <button id="source-toggle" type="button" aria-controls="source-section" aria-expanded="false" hidden>
+            <span id="source-toggle-label">查看原文</span><svg viewBox="0 0 24 24" aria-hidden="true">${paths.down}</svg>
+          </button>
+          <span id="target" class="target" hidden></span>
+          <div class="popup-actions">
+            <button id="copy" type="button" class="icon" title="复制译文" aria-label="复制译文" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><g class="copy-mark">${paths.copy}</g><g class="copy-check">${paths.check}</g></svg>
+            </button>
+            <button id="primary" type="button" class="primary" title="Ctrl+Enter" aria-keyshortcuts="Control+Enter" hidden disabled>填入</button>
+          </div>
+        </div>
+        <div id="popup-feedback" class="popup-feedback" hidden>
+          <p id="status" class="status"></p><button id="retry" type="button" class="secondary" hidden>重试</button>
+        </div>
+        <span id="copy-announcement" class="popup-announcement" role="status"></span>
+      </div>
+    </section>`;
+  const popup = $('popup'), source = $('source'), result = $('result');
+  const primary = $('primary'), copyButton = $('copy');
+  let context = bootData.context || {};
+  let selectionDraft = false, preview = false, sourceExpanded = false;
+  let busy = false, resultComposing = false, copyTimer, focusTimer;
   const session = new TranslationSession(invoke, (s) => {
-    if (!resultComposing && $('result').value !== s.result) $('result').value = s.result;
-    $('result').readOnly = !['ready', 'edited'].includes(s.phase) || busy;
-    $('result').placeholder = t(({ waiting: '等待翻译…', translating: '翻译中…', composing: '选词中…', error: '翻译未完成' })[s.phase] || '译文');
-    $('primary').disabled = $('copy').disabled = !s.canOutput || resultComposing || busy;
-    $('primary').textContent = t(busy ? '…' : context.hasTarget ? selectionDraft ? '替换' : '填入' : '复制');
-    $('target').textContent = context.hasTarget ? t(context.targetName || '') : ''; $('copy').classList.toggle('hidden', !context.hasTarget);
-    status(s.phase === 'error' ? s.message : context.message || '', s.phase === 'error' || (context.error ?? !!context.message));
-    $('retry').classList.toggle('hidden', s.phase !== 'error'); fit();
+    const hasSource = Boolean(s.source.trim());
+    const error = s.phase === 'error';
+    popup.toggleAttribute('data-preview', preview);
+    popup.toggleAttribute('data-copy-only', !context.hasTarget);
+    $('translation-languages').hidden = preview;
+    $('source-languages').hidden = !preview;
+    $('source-section').hidden = preview && !sourceExpanded && hasSource;
+    $('source-toggle').hidden = !preview;
+    $('source-toggle').setAttribute('aria-expanded', String(sourceExpanded));
+    $('source-toggle-label').textContent = t(sourceExpanded ? '收起原文' : '查看原文');
+    $('result-section').hidden = !hasSource;
+    $('toolbar').hidden = !hasSource;
+    if (!resultComposing && result.value !== s.result) result.value = s.result;
+    result.readOnly = !['ready', 'edited'].includes(s.phase) || busy;
+    result.placeholder = t(({ waiting: '等待翻译…', translating: '翻译中…', composing: '选词中…', error: '翻译未完成' })[s.phase] || '译文');
+    primary.disabled = copyButton.disabled = !s.canOutput || resultComposing || busy;
+    primary.hidden = !context.hasTarget;
+    primary.textContent = t(busy ? '…' : selectionDraft ? '替换' : '填入');
+    if (context.hasTarget) copyButton.removeAttribute('aria-keyshortcuts');
+    else copyButton.setAttribute('aria-keyshortcuts', 'Control+Enter');
+    copyButton.title = t('复制译文') + (context.hasTarget ? '' : ' · Ctrl+Enter');
+    $('target').hidden = !context.hasTarget || !context.targetName;
+    $('target').textContent = context.hasTarget ? t(context.targetName || '') : '';
+    $('target').title = $('target').textContent;
+    status(error ? s.message : context.message || '', error || (context.error ?? !!context.message));
+    $('retry').hidden = !error;
+    $('popup-feedback').hidden = !error && !context.message;
+    fit();
   });
+
+  function clearCopyFeedback() {
+    clearTimeout(copyTimer);
+    copyButton.removeAttribute('data-copied');
+    $('copy-announcement').textContent = '';
+  }
+  function resetSelection() {
+    preview = selectionDraft = sourceExpanded = false;
+    source.value = '';
+    session.clear();
+  }
   function open(next) {
     context = next || {};
-    if (typeof context.selected === 'string') { selectionDraft = true; $('source').value = context.selected; session.update(context.selected); }
-    else if (selectionDraft) { selectionDraft = false; $('source').value = ''; session.clear(); }
-    session.resume(); setTimeout(() => $('source').focus(), 30);
+    sourceExpanded = false;
+    clearCopyFeedback();
+    if (typeof context.selected === 'string') {
+      selectionDraft = true;
+      preview = !context.hasTarget;
+      source.value = context.selected;
+      session.update(context.selected);
+    } else if (selectionDraft) {
+      resetSelection();
+    }
+    session.resume();
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => (preview ? popup : source).focus({ preventScroll: true }), 30);
   }
-  $('source').addEventListener('input', () => { context.message = ''; session.update($('source').value); });
-  $('source').addEventListener('compositionstart', () => session.setComposing(true));
-  $('source').addEventListener('compositionend', () => { session.source = $('source').value; session.setComposing(false); });
-  $('result').addEventListener('input', () => session.edit($('result').value));
-  $('result').addEventListener('compositionstart', () => { resultComposing = true; session.emit(); });
-  $('result').addEventListener('compositionend', () => { resultComposing = false; session.edit($('result').value); });
-  async function output(copy = false) {
+  $('source-toggle').onclick = () => {
+    sourceExpanded = !sourceExpanded;
+    session.emit();
+  };
+  source.addEventListener('input', () => {
+    clearCopyFeedback();
+    context.message = '';
+    session.update(source.value);
+  });
+  source.addEventListener('compositionstart', () => {
+    clearCopyFeedback();
+    session.setComposing(true);
+  });
+  source.addEventListener('compositionend', () => { session.source = source.value; session.setComposing(false); });
+  result.addEventListener('input', () => { clearCopyFeedback(); session.edit(result.value); });
+  result.addEventListener('compositionstart', () => { clearCopyFeedback(); resultComposing = true; session.emit(); });
+  result.addEventListener('compositionend', () => { resultComposing = false; session.edit(result.value); });
+  async function output(copy = !context.hasTarget) {
     if (!session.canOutput || busy || resultComposing) return;
     busy = true; session.emit();
     try {
-      const result = await invoke('output', { text: session.result, serial: session.serial, copy });
-      if (result.outcome === 'submitted') { $('source').value = ''; selectionDraft = false; session.clear(); }
-      if (result.outcome !== 'copied') context.hasTarget = false;
-      context.message = result.message;
-      context.error = ['rejected', 'uncertain'].includes(result.outcome);
-      session.emit(); status(result.message, ['rejected', 'uncertain'].includes(result.outcome));
-    } catch (error) { status(String(error), true); }
+      const receipt = await invoke('output', { text: session.result, serial: session.serial, copy });
+      if (receipt.outcome === 'copied') {
+        clearCopyFeedback();
+        copyButton.setAttribute('data-copied', '');
+        $('copy-announcement').textContent = t(receipt.message);
+        copyTimer = setTimeout(clearCopyFeedback, 1500);
+        context.message = '';
+        context.error = false;
+      } else {
+        context.hasTarget = false;
+        context.message = receipt.message;
+        context.error = ['rejected', 'uncertain'].includes(receipt.outcome);
+        if (receipt.outcome === 'submitted') resetSelection();
+      }
+    } catch (error) { context.message = String(error); context.error = true; }
     finally { busy = false; session.emit(); }
   }
-  $('primary').onclick = () => output(); $('copy').onclick = () => output(true);
+  primary.onclick = () => output(); copyButton.onclick = () => output(true);
   $('retry').onclick = () => session.retry();
-  $('settings').onclick = () => invoke('action', { name: 'settings' });
   document.addEventListener('keydown', (event) => { if (event.ctrlKey && event.key === 'Enter' && !event.isComposing) { event.preventDefault(); output(); } });
   await listen('open', (event) => open(event.payload));
-  await listen('clear', () => { $('source').value = ''; selectionDraft = false; session.clear(); });
-  function renderLanguages(config) { $('translation-languages').textContent = formatLanguagePair(config, bootData.languages, t); $('translation-languages').title = t(pairHint); }
+  await listen('clear', () => { clearCopyFeedback(); resetSelection(); });
+  function renderLanguages(config) {
+    const pair = formatLanguagePair(config, bootData.languages, t);
+    for (const id of ['translation-languages', 'source-languages']) {
+      $(id).textContent = pair;
+      $(id).title = t(pairHint);
+    }
+  }
   renderLanguages(bootData.config);
-  await listen('config-changed', ({ payload }) => { renderLanguages(payload); session.update(session.source); });
+  await listen('config-changed', ({ payload }) => { clearCopyFeedback(); renderLanguages(payload); session.update(session.source); });
   window.addEventListener('blur', () => { if (!busy) { session.suspend(); context.hasTarget = false; } });
   window.addEventListener('focus', () => { if (!session.suspended) return; session.resume(); });
   wireFrame(); open(context);
