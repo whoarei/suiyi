@@ -6,9 +6,9 @@
 
 **Select a sentence. Translate in place.**
 
-Suiyi translates text in your Windows input fields. Enable Quick Mode, select text, and press `Ctrl+Alt+T`. The translation replaces your selection and keeps the surrounding text intact.
+Suiyi translates selected text on Windows. In a supported input field, enable Quick Mode, select text, and press `Ctrl+Alt+T` to replace the selection and keep the surrounding text intact.
 
-With no selection or usable input field, the same shortcut opens the translation window for manual input. Turn off Quick Mode to always preview translations first.
+In supported webpages and other read-only areas, the same shortcut opens the translation window so you can preview and copy the translation. If the selection is unavailable, you can type or paste the source. Turn off Quick Mode to always preview translations first.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/quick-replace-dark.en.gif">

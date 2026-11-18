@@ -2,7 +2,7 @@ use crate::{
     api::{self, Provider},
     i18n,
     language::{LANGUAGES, LanguagePair, TargetLanguage},
-    native::{self, HotkeyWorker, Receipt, Target},
+    native::{self, Capture, HotkeyWorker, Inspection, Receipt, Target},
     store::{Config, Hotkey, Preferences, Store},
     theme, update,
 };
@@ -32,12 +32,9 @@ enum ShortcutAction {
     Replace(Target, String),
     Popup(Option<Target>, OpenContext),
 }
-fn shortcut_action(
-    quick_mode: bool,
-    capture: Result<(Target, Option<String>), String>,
-) -> ShortcutAction {
+fn shortcut_action(quick_mode: bool, capture: Result<Capture, String>) -> ShortcutAction {
     match capture {
-        Ok((target, text)) => {
+        Ok(Capture::Input(target, text)) => {
             if quick_mode
                 && target.selection.is_some()
                 && text.as_ref().is_some_and(|text| !text.trim().is_empty())
@@ -52,6 +49,13 @@ fn shortcut_action(
             };
             ShortcutAction::Popup(Some(target), context)
         }
+        Ok(Capture::Preview(text)) => ShortcutAction::Popup(
+            None,
+            OpenContext {
+                selected: Some(text),
+                ..Default::default()
+            },
+        ),
         Err(message) => ShortcutAction::Popup(
             None,
             OpenContext {
@@ -847,9 +851,10 @@ fn release_page(window: WebviewWindow, state: State<Runtime>) -> Result<(), Stri
 
 pub fn run() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() == 2 && matches!(args[0].as_str(), "--inspect-focus" | "--inspect-selection") {
-        let window = args[1].parse().unwrap_or(0);
-        let observation = native::inspect_mode(window, args[0] == "--inspect-selection");
+    if let [mode, window] = args.as_slice()
+        && let Some(mode) = Inspection::from_argument(mode)
+    {
+        let observation = native::inspect_mode(window.parse().unwrap_or(0), mode);
         println!("{}", serde_json::to_string(&observation).unwrap());
         return;
     }
@@ -1111,15 +1116,18 @@ mod shortcut_tests {
 
     #[test]
     fn selected_text_replaces_only_in_quick_mode() {
-        let capture = Ok((target(true), Some("你好".into())));
-        let ShortcutAction::Replace(target, text) = shortcut_action(true, capture.clone()) else {
+        let ShortcutAction::Replace(captured, text) =
+            shortcut_action(true, Ok(Capture::Input(target(true), Some("你好".into()))))
+        else {
             panic!("quick mode must replace the captured selection");
         };
-        assert_eq!(target.id, "captured-session");
-        assert!(target.selection.is_some());
+        assert_eq!(captured.id, "captured-session");
+        assert!(captured.selection.is_some());
         assert_eq!(text, "你好");
 
-        let ShortcutAction::Popup(Some(target), context) = shortcut_action(false, capture) else {
+        let ShortcutAction::Popup(Some(target), context) =
+            shortcut_action(false, Ok(Capture::Input(target(true), Some("你好".into()))))
+        else {
             panic!("normal mode must preview the captured selection");
         };
         assert!(target.selection.is_some());
@@ -1131,7 +1139,7 @@ mod shortcut_tests {
     fn missing_selection_opens_popup_with_original_insertion_target() {
         for quick in [true, false] {
             let ShortcutAction::Popup(Some(target), context) =
-                shortcut_action(quick, Ok((target(false), None)))
+                shortcut_action(quick, Ok(Capture::Input(target(false), None)))
             else {
                 panic!("an empty selection must open the popup");
             };
@@ -1141,6 +1149,20 @@ mod shortcut_tests {
             assert!(context.has_target);
             assert_eq!(context.target_name, "记事本");
             assert!(context.selected.is_none());
+            assert!(context.message.is_empty());
+        }
+    }
+
+    #[test]
+    fn read_only_selection_opens_copy_popup_with_selected_text() {
+        for quick in [true, false] {
+            let ShortcutAction::Popup(None, context) =
+                shortcut_action(quick, Ok(Capture::Preview("网页正文".into())))
+            else {
+                panic!("a preview selection must open the popup without an insertion target");
+            };
+            assert!(!context.has_target);
+            assert_eq!(context.selected.as_deref(), Some("网页正文"));
             assert!(context.message.is_empty());
         }
     }

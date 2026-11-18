@@ -57,6 +57,30 @@ pub struct Target {
     pub identity: Option<Vec<i32>>,
     pub selection: Option<Selection>,
 }
+pub enum Capture {
+    Input(Target, Option<String>),
+    Preview(String),
+}
+#[derive(Clone, Copy, PartialEq)]
+pub enum Inspection {
+    Focus,
+    EditableSelection,
+    Selection,
+}
+impl Inspection {
+    fn argument(self) -> &'static str {
+        match self {
+            Self::Focus => "--inspect-focus",
+            Self::EditableSelection => "--inspect-editable-selection",
+            Self::Selection => "--inspect-selection",
+        }
+    }
+    pub fn from_argument(arg: &str) -> Option<Self> {
+        [Self::Focus, Self::EditableSelection, Self::Selection]
+            .into_iter()
+            .find(|mode| mode.argument() == arg)
+    }
+}
 pub fn display_name(process: &str) -> String {
     match process.to_lowercase().as_str() {
         "weixin" | "wechat" => "微信",
@@ -118,10 +142,13 @@ fn native_edit(hwnd: isize) -> bool {
             || class.starts_with("windowsforms10.richedit")
     }
 }
+const ES_PASSWORD: isize = 0x20;
+const ES_READONLY: isize = 0x800;
 fn editable(hwnd: isize) -> bool {
     unsafe {
         IsWindowEnabled(hwnd) != 0
-            && (!native_edit(hwnd) || (GetWindowLongPtrW(hwnd, -16) & (0x20 | 0x800)) == 0)
+            && (!native_edit(hwnd)
+                || (GetWindowLongPtrW(hwnd, -16) & (ES_PASSWORD | ES_READONLY)) == 0)
     }
 }
 fn identity(window: isize) -> Option<(u32, u64, String)> {
@@ -211,7 +238,11 @@ fn native_selection(
     cancel: &CancellationToken,
 ) -> Result<(Option<Selection>, Option<String>), String> {
     unsafe {
-        if !wait_keys(trigger, cancel) || !same_focus(t) || !editable(t.focus) {
+        if !wait_keys(trigger, cancel)
+            || !same_focus(t)
+            || IsWindowEnabled(t.focus) == 0
+            || GetWindowLongPtrW(t.focus, -16) & ES_PASSWORD != 0
+        {
             return Err("输入焦点已变化，请重新选择。".into());
         }
         let (start, end) = native_range(t.focus).ok_or("无法读取原选区。")?;
@@ -335,17 +366,10 @@ pub fn write_clipboard(
         Err("剪贴板被占用，请重试。".into())
     }
 }
-pub fn probe(window: isize, selection: bool) -> Observation {
+fn probe(window: isize, mode: Inspection) -> Observation {
     let result = (|| -> Option<Observation> {
         let mut child = Command::new(std::env::current_exe().ok()?)
-            .args([
-                if selection {
-                    "--inspect-selection"
-                } else {
-                    "--inspect-focus"
-                },
-                &window.to_string(),
-            ])
+            .args([mode.argument(), &window.to_string()])
             .env_remove("DEEPSEEK_API_KEY")
             .creation_flags(0x08000000)
             .stdin(Stdio::null())
@@ -383,10 +407,7 @@ pub fn probe(window: isize, selection: bool) -> Observation {
     })();
     result.unwrap_or_default()
 }
-pub fn capture(
-    trigger: u32,
-    cancel: &CancellationToken,
-) -> Result<(Target, Option<String>), String> {
+pub fn capture(trigger: u32, cancel: &CancellationToken) -> Result<Capture, String> {
     unsafe {
         let window = root();
         let (pid, creation, name) = identity(window).ok_or("未找到原输入位置。")?;
@@ -394,40 +415,41 @@ pub fn capture(
             return Err("请先在目标输入框选中文字，再按快捷键。".into());
         }
         let focus = focus(window);
-        if focus != 0 && (GetAncestor(focus, 2) != window || !editable(focus)) {
+        let native = focus != 0 && native_edit(focus);
+        let style = if native {
+            GetWindowLongPtrW(focus, -16)
+        } else {
+            0
+        };
+        if focus != 0
+            && (GetAncestor(focus, 2) != window
+                || IsWindowEnabled(focus) == 0
+                || style & ES_PASSWORD != 0)
+        {
             return Err("此控件为密码、只读或不可用区域。".into());
         }
-        let observation = if focus != 0 && native_edit(focus) {
+        let observation = if native {
+            let writable = style & ES_READONLY == 0;
             Observation {
                 available: true,
                 belongs: true,
                 enabled: true,
-                editable: Some(true),
+                editable: Some(writable),
+                read_only: Some(!writable),
                 ..Default::default()
             }
         } else {
-            probe(window, true)
+            probe(window, Inspection::Selection)
         };
         if observation.available
-            && (!observation.belongs
-                || !observation.enabled
-                || observation.password
-                || observation.read_only == Some(true)
-                || observation.editable == Some(false))
+            && (!observation.belongs || !observation.enabled || observation.password)
         {
             return Err("当前位置不是可用的可编辑输入框。".into());
-        }
-        let identity = if observation.editable == Some(true) {
-            observation.identity
-        } else {
-            None
-        };
-        if focus == 0 && identity.is_none() {
-            return Err("无法确认原输入位置，可以使用复制模式。".into());
         }
         if matches!(observation.state.as_str(), "tooLong" | "multiple") {
             return Err("选区过长或包含多个范围，请只选择一段不超过 2000 的文字。".into());
         }
+        let writable = observation.editable == Some(true);
         let mut target = Target {
             id: uuid::Uuid::new_v4().to_string(),
             window,
@@ -435,17 +457,31 @@ pub fn capture(
             pid,
             creation,
             name,
-            identity,
+            identity: observation.identity.filter(|_| writable),
             selection: observation.selection,
         };
         let mut text = observation.text;
-        if focus != 0 && native_edit(focus) {
+        if native {
             (target.selection, text) = native_selection(&target, trigger, cancel)?
         }
         if !same_focus(&target) || cancel.is_cancelled() {
             return Err("输入焦点已改变，请重新唤出。".into());
         }
-        Ok((target, text))
+        let read_only = observation.read_only == Some(true)
+            || observation.editable == Some(false)
+            || native && !editable(focus);
+        if (read_only || target.selection.is_none())
+            && let Some(text) = text.as_ref().filter(|text| !text.trim().is_empty())
+        {
+            return Ok(Capture::Preview(text.clone()));
+        }
+        if read_only {
+            return Err("当前位置不是可用的可编辑输入框。".into());
+        }
+        if focus == 0 && target.identity.is_none() {
+            return Err("无法确认原输入位置，可以使用复制模式。".into());
+        }
+        Ok(Capture::Input(target, text))
     }
 }
 fn verify(t: &Target) -> bool {
@@ -465,9 +501,14 @@ fn verify(t: &Target) -> bool {
     if let Some(identity) = &t.identity {
         let o = probe(
             t.window,
-            t.selection
+            if t.selection
                 .as_ref()
-                .is_some_and(|s| s.method == "automation"),
+                .is_some_and(|s| s.method == "automation")
+            {
+                Inspection::EditableSelection
+            } else {
+                Inspection::Focus
+            },
         );
         if !o.available
             || !o.belongs
@@ -554,7 +595,9 @@ pub fn insert(
         return Receipt::reject("原窗口、输入焦点或选区已改变，未替换。");
     }
     let selection_valid = if t.selection.as_ref().is_some_and(|s| s.method == "native") {
-        native_selection(t, trigger, cancel).is_ok_and(|(selection, _)| selection == t.selection)
+        editable(t.focus)
+            && native_selection(t, trigger, cancel)
+                .is_ok_and(|(selection, _)| selection == t.selection)
     } else {
         true
     };
@@ -641,7 +684,7 @@ pub fn placement_physical(width: i32, height: i32) -> (i32, i32) {
 }
 
 // UIA runs before Tauri initialization, in a short-lived, killable subprocess.
-pub fn inspect_mode(window: isize, read_selection: bool) -> Observation {
+pub fn inspect_mode(window: isize, mode: Inspection) -> Observation {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let result = (|| -> windows::core::Result<Observation> {
@@ -659,28 +702,40 @@ pub fn inspect_mode(window: isize, read_selection: bool) -> Observation {
                 }
                 ancestor = walker.GetParentElement(&element).ok()
             }
-            let mut read_only = None;
-            if let Ok(value) =
-                focused.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-            {
-                read_only = Some(value.CurrentIsReadOnly()?.as_bool())
-            } else if let Ok(text) =
-                focused.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
-            {
-                let v = text
-                    .DocumentRange()?
-                    .GetAttributeValue(UIA_IsReadOnlyAttributeId)?;
-                read_only = bool::try_from(&v).ok()
-            }
-            let control = focused.CurrentControlType()?.0;
+            let value_pattern = focused
+                .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                .ok();
+            let text_pattern = if mode != Inspection::Focus || value_pattern.is_none() {
+                focused
+                    .GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+                    .ok()
+            } else {
+                None
+            };
+            let read_only = if let Some(value) = value_pattern {
+                Some(value.CurrentIsReadOnly()?.as_bool())
+            } else {
+                text_pattern.as_ref().and_then(|pattern| {
+                    let value = pattern
+                        .DocumentRange()
+                        .ok()?
+                        .GetAttributeValue(UIA_IsReadOnlyAttributeId)
+                        .ok()?;
+                    bool::try_from(&value).ok()
+                })
+            };
+            let control = focused.CurrentControlType()?;
             let editable = read_only.map(|v| !v).or(
-                if matches!(control, 50004 | 50030 | 50025 | 50033 | 50032 | 50003) {
+                if matches!(control.0, 50004 | 50030 | 50025 | 50033 | 50032 | 50003) {
                     None
                 } else {
                     Some(false)
                 },
             );
-            let identity = safe_array::<i32>(focused.GetRuntimeId()?)
+            let identity = focused
+                .GetRuntimeId()
+                .ok()
+                .and_then(|id| safe_array::<i32>(id))
                 .filter(|v| !v.is_empty() && v.len() <= 64);
             let mut o = Observation {
                 available: true,
@@ -693,48 +748,43 @@ pub fn inspect_mode(window: isize, read_selection: bool) -> Observation {
                 state: "unavailable".into(),
                 ..Default::default()
             };
-            if read_selection
-                && o.belongs
-                && o.enabled
-                && !o.password
-                && o.editable == Some(true)
-                && o.identity.is_some()
-                && let Ok(pattern) =
-                    focused.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+            if !o.belongs || !o.enabled || o.password {
+                return Ok(o);
+            }
+            let can_replace = o.editable == Some(true) && o.identity.is_some();
+            if (mode == Inspection::Selection
+                || mode == Inspection::EditableSelection && can_replace)
+                && let Some(pattern) = text_pattern
             {
-                let ranges = pattern.GetSelection()?;
-                let count = ranges.Length()?;
-                if count == 0 {
-                    o.state = "none".into()
-                } else if count != 1 {
-                    o.state = "multiple".into()
-                } else {
-                    let range = ranges.GetElement(0)?;
-                    if range.CompareEndpoints(
-                        TextPatternRangeEndpoint_Start,
-                        &range,
-                        TextPatternRangeEndpoint_End,
-                    )? == 0
-                    {
-                        o.state = "none".into()
-                    } else {
-                        let text = range.GetText(2001)?.to_string();
-                        if utf16_len(&text) > 2000 {
-                            o.state = "tooLong".into()
-                        } else if let Some(rects) =
-                            safe_array::<f64>(range.GetBoundingRectangles()?)
-                            && !rects.is_empty()
-                        {
-                            let location = rects
-                                .iter()
-                                .map(|n| format!("{n:.1}"))
-                                .collect::<Vec<_>>()
-                                .join(",");
-                            o.selection = Some(snapshot(&text, "automation", &location, 0, 0));
-                            o.text = Some(text);
-                            o.state = "selected".into()
-                        }
+                let _ = read_automation_selection(&pattern, can_replace, &mut o);
+            }
+            if mode == Inspection::Selection
+                && o.editable != Some(true)
+                && matches!(o.state.as_str(), "none" | "unavailable")
+                && control != UIA_EditControlTypeId
+                && control != UIA_DocumentControlTypeId
+            {
+                // Page text can receive focus through a child element of its text provider.
+                let mut child = focused;
+                for _ in 0..16 {
+                    let Ok(parent) = walker.GetParentElement(&child) else {
+                        break;
+                    };
+                    let hwnd = parent.CurrentNativeWindowHandle()?.0 as isize;
+                    if hwnd != 0 && GetAncestor(hwnd, 2) != window {
+                        break;
                     }
+                    if parent.CurrentControlType()? == UIA_DocumentControlTypeId {
+                        if parent.CurrentIsEnabled()?.as_bool()
+                            && !parent.CurrentIsPassword()?.as_bool()
+                            && let Ok(pattern) = parent
+                                .GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+                        {
+                            let _ = read_automation_selection(&pattern, false, &mut o);
+                        }
+                        break;
+                    }
+                    child = parent;
                 }
             }
             Ok(o)
@@ -742,6 +792,49 @@ pub fn inspect_mode(window: isize, read_selection: bool) -> Observation {
         CoUninitialize();
         result.unwrap_or_default()
     }
+}
+unsafe fn read_automation_selection(
+    pattern: &IUIAutomationTextPattern,
+    can_replace: bool,
+    observation: &mut Observation,
+) -> windows::core::Result<()> {
+    let ranges = pattern.GetSelection()?;
+    match ranges.Length()? {
+        0 => observation.state = "none".into(),
+        1 => {
+            let range = ranges.GetElement(0)?;
+            if range.CompareEndpoints(
+                TextPatternRangeEndpoint_Start,
+                &range,
+                TextPatternRangeEndpoint_End,
+            )? == 0
+            {
+                observation.state = "none".into();
+                return Ok(());
+            }
+            let text = range.GetText(2001)?.to_string();
+            if utf16_len(&text) > 2000 {
+                observation.state = "tooLong".into();
+                return Ok(());
+            }
+            if can_replace
+                && let Ok(rectangles) = range.GetBoundingRectangles()
+                && let Some(rects) = safe_array::<f64>(rectangles)
+                && !rects.is_empty()
+            {
+                let location = rects
+                    .iter()
+                    .map(|n| format!("{n:.1}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                observation.selection = Some(snapshot(&text, "automation", &location, 0, 0));
+            }
+            observation.text = Some(text);
+            observation.state = "selected".into();
+        }
+        _ => observation.state = "multiple".into(),
+    }
+    Ok(())
 }
 unsafe fn safe_array<T: Copy>(array: *mut SAFEARRAY) -> Option<Vec<T>> {
     if array.is_null() {

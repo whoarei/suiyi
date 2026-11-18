@@ -40,7 +40,7 @@
   "恢复默认快捷键": "Reset shortcut",
   "快速模式": "Quick Mode",
   "快速模式状态": "Quick Mode status",
-  "选中文字时直接替换；无选区或输入框时打开翻译框。关闭后始终打开翻译框。": "Replace selected text directly, or open the translation window when no selection or input field is available. Turn off to always preview translations.",
+  "直接替换可编辑选区，只读选区打开翻译框。关闭后始终打开翻译框。": "Replace editable selections directly and preview read-only selections. Turn off to always preview translations.",
   "开机启动": "Start at login",
   "开机启动状态": "Startup status",
   "测试": "Test",

@@ -8,7 +8,7 @@ const currentWindow = window.__TAURI__.window.getCurrentWindow();
 const view = new URLSearchParams(location.search).get('view') || 'main';
 const root = document.querySelector('#app');
 const $ = (id) => document.getElementById(id);
-const quickModeHint = '选中文字时直接替换；无选区或输入框时打开翻译框。关闭后始终打开翻译框。';
+const quickModeHint = '直接替换可编辑选区，只读选区打开翻译框。关闭后始终打开翻译框。';
 const pairHint = '主要语言译为常用外语，其他语言译为主要语言。';
 function languagePairInputs(primaryId, secondaryId) {
   let pair;
