@@ -266,7 +266,7 @@ final class TranslationClient {
         }
     }
 
-    static final class TranslationFailure extends Exception {
+    static final class TranslationFailure extends UiRequest.Failure {
         final int httpStatus;
         private final int message;
 
@@ -275,13 +275,15 @@ final class TranslationClient {
         }
 
         private TranslationFailure(int httpStatus, int message) {
+            super(message);
             this.httpStatus = httpStatus;
             this.message = message;
         }
 
+        @Override
         String message(Context context) {
             return message == R.string.api_failure ? context.getString(message, httpStatus)
-                    : context.getString(message);
+                    : super.message(context);
         }
     }
 }

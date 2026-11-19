@@ -2,8 +2,13 @@ package top.mossmoss.suiyi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -16,11 +21,17 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.FileProvider;
+
+import java.io.File;
 import java.security.GeneralSecurityException;
 import java.security.ProviderException;
 
 public final class SettingsActivity extends Activity {
+    private static final int ALLOW_INSTALL = 1;
+    private static final int INSTALL_UPDATE = 2;
     private final UiRequest request = new UiRequest();
+    private final UiRequest updateRequest = new UiRequest();
     private EditText address;
     private EditText model;
     private EditText key;
@@ -34,6 +45,9 @@ public final class SettingsActivity extends Activity {
     private TextView status;
     private LinearLayout apiFields;
     private TextView demoNote;
+    private Button updateButton;
+    private TextView updateStatus;
+    private File updateApk;
     private TranslationSettings saved;
     private Language primary;
     private Language other;
@@ -98,10 +112,24 @@ public final class SettingsActivity extends Activity {
         try {
             version.setText(getString(R.string.about_version,
                     getPackageManager().getPackageInfo(getPackageName(), 0).versionName));
-        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+        } catch (PackageManager.NameNotFoundException ignored) {
             version.setText(R.string.app_name);
         }
-        page.body().addView(version);
+        LinearLayout versionRow = NativeUi.row(this);
+        NativeUi.fill(versionRow, version);
+        updateButton = NativeUi.button(this, R.string.check_update, false, view -> checkOrInstallUpdate());
+        versionRow.addView(updateButton);
+        page.body().addView(versionRow);
+        updateStatus = NativeUi.text(this, 14, true);
+        updateStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        page.body().addView(updateStatus);
+        if (state != null) {
+            updateApk = AndroidUpdate.cachedApk(this, state.getString("updateApk"));
+            if (updateApk != null && updateApk.isFile()) {
+                updateButton.setText(R.string.install_update);
+                updateStatus.setText(R.string.update_downloaded);
+            }
+        }
 
         TextWatcher watcher = new TextWatcher() {
             public void beforeTextChanged(CharSequence text, int start, int count, int after) {}
@@ -134,6 +162,9 @@ public final class SettingsActivity extends Activity {
         out.putString("other", other.code);
         out.putBoolean("demo", demo.isChecked());
         out.putBoolean("quick", quick.isChecked());
+        if (updateApk != null) {
+            out.putString("updateApk", updateApk.getName());
+        }
     }
 
     @Override
@@ -141,7 +172,111 @@ public final class SettingsActivity extends Activity {
         if (request.running()) {
             draftChanged();
         }
+        if (updateRequest.running()) {
+            updateRequest.cancel();
+            showUpdateStatus("");
+        }
         super.onStop();
+    }
+
+    private void checkOrInstallUpdate() {
+        if (updateApk != null && updateApk.isFile()) {
+            installUpdate();
+            return;
+        }
+        updateApk = null;
+        updateButton.setText(R.string.check_update);
+        updateButton.setEnabled(false);
+        updateStatus.setText(R.string.update_checking);
+        updateRequest.start(() -> AndroidUpdate.check(getApplicationContext()), release -> {
+            if (release == null) {
+                showUpdateStatus(getText(R.string.update_current));
+                return;
+            }
+            showUpdateStatus("");
+            new AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.update_found, release.version()))
+                    .setMessage(R.string.update_download_prompt)
+                    .setPositiveButton(R.string.update_download_install, (dialog, choice) -> downloadUpdate(release))
+                    .setNegativeButton(R.string.cancel, null).show();
+        }, this::showUpdateFailure, 20000);
+    }
+
+    private void downloadUpdate(AndroidUpdate.Release release) {
+        updateButton.setEnabled(false);
+        updateStatus.setText(R.string.update_downloading);
+        updateRequest.start(() -> AndroidUpdate.download(getApplicationContext(), release), apk -> {
+            updateApk = apk;
+            updateButton.setText(R.string.install_update);
+            showUpdateStatus(getText(R.string.update_downloaded));
+            installUpdate();
+        }, this::showUpdateFailure, 180000);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void installUpdate() {
+        if (updateApk == null || !updateApk.isFile()) {
+            updateApk = null;
+            updateButton.setText(R.string.check_update);
+            showUpdateStatus(getText(R.string.update_file_missing));
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            new AlertDialog.Builder(this).setTitle(R.string.update_permission_title)
+                    .setMessage(R.string.update_permission_message)
+                    .setPositiveButton(R.string.update_open_settings, (dialog, choice) -> openInstallSettings())
+                    .setNegativeButton(R.string.cancel, null).show();
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".updates", updateApk);
+        Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .putExtra(Intent.EXTRA_RETURN_RESULT, true);
+        try {
+            startActivityForResult(install, INSTALL_UPDATE);
+        } catch (ActivityNotFoundException | SecurityException exception) {
+            showUpdateStatus(getText(R.string.update_install_failed));
+        }
+    }
+
+    @android.annotation.TargetApi(26)
+    @SuppressWarnings("deprecation")
+    private void openInstallSettings() {
+        try {
+            startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.fromParts("package", getPackageName(), null)), ALLOW_INSTALL);
+        } catch (ActivityNotFoundException | SecurityException exception) {
+            showUpdateStatus(getText(R.string.update_install_failed));
+        }
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == ALLOW_INSTALL && Build.VERSION.SDK_INT >= 26) {
+            if (getPackageManager().canRequestPackageInstalls()) {
+                installUpdate();
+            } else {
+                showUpdateStatus(getText(R.string.update_permission_message));
+            }
+        } else if (requestCode == INSTALL_UPDATE && resultCode == RESULT_OK && updateApk != null) {
+            updateApk.delete();
+            updateApk = null;
+            updateButton.setText(R.string.check_update);
+            showUpdateStatus("");
+        } else if (requestCode == INSTALL_UPDATE && resultCode == RESULT_FIRST_USER) {
+            showUpdateStatus(getText(R.string.update_install_rejected));
+        }
+    }
+
+    private void showUpdateFailure(UiRequest.Failure failure) {
+        showUpdateStatus(failure.message(this));
+    }
+
+    private void showUpdateStatus(CharSequence message) {
+        updateButton.setEnabled(true);
+        updateStatus.setText(message);
     }
 
     private void inspect(boolean connectionTest) {
@@ -261,7 +396,7 @@ public final class SettingsActivity extends Activity {
         test.setEnabled(true);
     }
 
-    private void showFailure(TranslationClient.TranslationFailure failure) {
+    private void showFailure(UiRequest.Failure failure) {
         setIdle();
         status.setText(failure.message(this));
         Toast.makeText(this, failure.message(this), Toast.LENGTH_LONG).show();

@@ -14,7 +14,11 @@ android {
         applicationId 'top.mossmoss.suiyi'
         minSdk 23
         targetSdk 36
-        versionCode 4
-        versionName '1.0.2'
+        versionCode 5
+        versionName '1.0.3'
     }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.16.0'
 }

@@ -80,5 +80,26 @@
     <string name="invalid_shared">The shared text is empty or too long.</string>
     <string name="invalid_result">The translation is empty or too long.</string>
     <string name="about_version">Suiyi for Android %1$s</string>
+    <string name="check_update">Check for updates</string>
+    <string name="install_update">Install update</string>
+    <string name="update_checking">Checking GitHub…</string>
+    <string name="update_current">You have the latest Android version.</string>
+    <string name="update_found">Android %1$s is available</string>
+    <string name="update_download_prompt">Download the APK from GitHub and open the Android installer?</string>
+    <string name="update_download_install">Download and install</string>
+    <string name="update_downloading">Downloading and verifying the APK…</string>
+    <string name="update_downloaded">The APK is ready to install.</string>
+    <string name="update_check_failed">Could not check GitHub for updates. Check your connection and try again.</string>
+    <string name="update_no_apk">The latest GitHub release has no Android APK.</string>
+    <string name="update_metadata_invalid">The GitHub release information could not be verified.</string>
+    <string name="update_download_failed">Could not download the APK. Try again.</string>
+    <string name="update_integrity_failed">The APK did not pass verification. Check for updates again.</string>
+    <string name="update_signer_mismatch">This APK was signed with a different key from the installed app.</string>
+    <string name="update_file_missing">The downloaded APK is gone. Check for updates again.</string>
+    <string name="update_permission_title">Allow installation</string>
+    <string name="update_permission_message">In Android Settings, allow Suiyi to install apps from this source, then return here.</string>
+    <string name="update_open_settings">Open Settings</string>
+    <string name="update_install_failed">Could not open the Android installer.</string>
+    <string name="update_install_rejected">Android could not install the update. Try again.</string>
     <string name="demo_pair">Simplified Chinese ⇄ English · Demo</string>
 </resources>

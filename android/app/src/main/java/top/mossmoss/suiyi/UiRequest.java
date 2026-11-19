@@ -1,11 +1,12 @@
 package top.mossmoss.suiyi;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
 final class UiRequest {
     interface Work<T> {
-        T run() throws TranslationClient.TranslationFailure;
+        T run() throws Failure;
     }
 
     interface Result<T> {
@@ -17,20 +18,19 @@ final class UiRequest {
     private Runnable timeoutTask;
     private int generation;
 
-    <T> void start(Work<T> work, Result<T> success, Result<TranslationClient.TranslationFailure> failure,
-                   long timeoutMillis) {
+    <T> void start(Work<T> work, Result<T> success, Result<Failure> failure, long timeoutMillis) {
         cancel();
         int operation = generation;
         timeoutTask = () -> {
             cancel();
-            failure.accept(new TranslationClient.TranslationFailure(R.string.request_timeout));
+            failure.accept(new Failure(R.string.request_timeout));
         };
         handler.postDelayed(timeoutTask, timeoutMillis);
         worker = new Thread(() -> {
             try {
                 T value = work.run();
                 handler.post(() -> complete(operation, () -> success.accept(value)));
-            } catch (TranslationClient.TranslationFailure exception) {
+            } catch (Failure exception) {
                 handler.post(() -> complete(operation, () -> failure.accept(exception)));
             }
         }, "suiyi-request");
@@ -59,5 +59,17 @@ final class UiRequest {
         }
         cancel();
         deliver.run();
+    }
+
+    static class Failure extends Exception {
+        private final int message;
+
+        Failure(int message) {
+            this.message = message;
+        }
+
+        String message(Context context) {
+            return context.getString(message);
+        }
     }
 }
