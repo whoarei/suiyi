@@ -35,6 +35,33 @@ $env:ANDROID_HOME = 'E:\Android\SDK'
 
 正式 APK 与 SHA-256 校验文件输出到仓库的 `artifacts/android`。签名密钥与当前 Windows 用户加密的密码文件保存在 `%LOCALAPPDATA%\Suiyi\AndroidSigning`。Android 更新依赖原签名，发布前请保管原密钥及可在其他机器恢复的密码备份。旧试用 APK 使用调试签名，安装正式版时 Android 会将它判定为不同签名。
 
+## GitHub Actions 签名与发布
+
+在仓库 [Settings → Secrets and variables → Actions](https://github.com/whoarei/suiyi/settings/secrets/actions) 添加以下配置。
+
+| 名称 | 类型 | 值 |
+| --- | --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 必填 Secret | 完整签名密钥库文件的 Base64 文本 |
+| `ANDROID_KEYSTORE_PASSWORD` | 必填 Secret | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 可选 Secret 或 Variable | 私钥别名，优先读取 Secret，默认 `suiyi-android` |
+| `ANDROID_KEY_PASSWORD` | 可选 Secret | 私钥使用独立密码时填写，默认使用密钥库密码 |
+
+要让 CI 生成的 APK 能覆盖安装现有正式版，请使用同一个签名密钥库。沿用本机密钥时，可以在创建它的 Windows 用户下运行以下命令，直接通过 GitHub CLI 写入两个 Secret。
+
+```powershell
+$signingDir = Join-Path $env:LOCALAPPDATA 'Suiyi/AndroidSigning'
+$keystore = Join-Path $signingDir 'suiyi-release.p12'
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($keystore)) |
+    gh secret set ANDROID_KEYSTORE_BASE64 --repo whoarei/suiyi
+
+$encrypted = (Get-Content -LiteralPath (Join-Path $signingDir 'password.dpapi') -Raw).Trim()
+$credential = [pscredential]::new('suiyi-android', (ConvertTo-SecureString $encrypted))
+$credential.GetNetworkCredential().Password |
+    gh secret set ANDROID_KEYSTORE_PASSWORD --repo whoarei/suiyi
+```
+
+手动运行 [Windows and Android release](https://github.com/whoarei/suiyi/actions/workflows/release.yml)，可从运行记录下载 `android` 构建产物。推送 `vX.Y.Z` 或预发布标签时，Windows 和 Android 构建均通过后，GitHub Release 会附上两端产物。Android APK 文件名和可升级版本分别由 `android/app/build.gradle` 里的 `versionName` 和 `versionCode` 决定。
+
 ## 自动化测试
 
 测试应用提供原生输入框、只读文本和 WebView 输入框。运行测试需选定可清理的测试设备，测试会修改随译设置和剪贴板。普通真机试用可直接安装正式 APK。

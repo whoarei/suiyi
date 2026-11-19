@@ -1,4 +1,4 @@
-name: Windows release
+name: Windows and Android release
 
 on:
   push:
@@ -84,9 +84,75 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+  build-android:
+    name: Check and build Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle
+            android/gradle.properties
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Lint and assemble release APK
+        run: ./gradlew --no-daemon --console=plain :app:lintDebug :app:assembleRelease
+
+      - name: Sign and verify Android APK
+        shell: pwsh
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || vars.ANDROID_KEY_ALIAS || 'suiyi-android' }}
+        run: |
+          foreach ($name in @('ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) {
+              throw "Set the repository Actions secret $name before signing Android builds."
+            }
+          }
+          $keystore = mktemp (Join-Path $env:RUNNER_TEMP 'suiyi-android.XXXXXX')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create a temporary Android keystore file.' }
+          try {
+            [IO.File]::WriteAllBytes($keystore, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+            Remove-Item Env:ANDROID_KEYSTORE_BASE64
+            $keyPasswordEnv = if ($env:ANDROID_KEY_PASSWORD) { 'ANDROID_KEY_PASSWORD' } else { 'ANDROID_KEYSTORE_PASSWORD' }
+            ./sign-apk.ps1 -Keystore $keystore -KeyAlias $env:ANDROID_KEY_ALIAS -KeyPasswordEnv $keyPasswordEnv
+          } finally {
+            Remove-Item -LiteralPath $keystore -Force
+          }
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android
+          path: |
+            artifacts/android/*-android.apk
+            artifacts/android/*-android.apk.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, build-android]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -99,11 +165,17 @@ jobs:
           name: windows-x64
           path: release-assets
 
-      - name: Verify archive checksum
+      - name: Download Android artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android
+          path: release-assets
+
+      - name: Verify package checksums
         working-directory: release-assets
         run: sha256sum --check --strict *.sha256
 
-      - name: Create release and attach installer and portable app
+      - name: Create release and attach Windows and Android packages
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -113,5 +185,5 @@ jobs:
           if [[ "$RELEASE_TAG" == *-* ]]; then
             options+=(--prerelease --latest=false)
           fi
-          gh release create "$RELEASE_TAG" release-assets/*.exe release-assets/*.zip release-assets/*.sha256 \
+          gh release create "$RELEASE_TAG" release-assets/*.exe release-assets/*.zip release-assets/*.apk release-assets/*.sha256 \
             --verify-tag --title "随译 $RELEASE_TAG" --generate-notes "${options[@]}"

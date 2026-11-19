@@ -4,10 +4,10 @@ param([switch]$InitializeLocalKey)
 
 $ErrorActionPreference = 'Stop'
 if (-not $env:JAVA_HOME) { throw 'Set JAVA_HOME to a JDK 17 or 21 installation.' }
-$sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $env:ANDROID_SDK_ROOT }
-if (-not $sdk) { throw 'Set ANDROID_HOME to the Android SDK directory.' }
+if (-not $env:ANDROID_HOME -and -not $env:ANDROID_SDK_ROOT) {
+    throw 'Set ANDROID_HOME to the Android SDK directory.'
+}
 $keytool = Join-Path $env:JAVA_HOME 'bin/keytool.exe'
-$signer = Join-Path $sdk 'build-tools/36.0.0/apksigner.bat'
 $signingDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Suiyi/AndroidSigning'
 $keystore = Join-Path $signingDir 'suiyi-release.p12'
 $secret = Join-Path $signingDir 'password.dpapi'
@@ -44,25 +44,10 @@ try {
         Pop-Location
     }
 
-    $metadata = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'app/build/outputs/apk/release/output-metadata.json') -Raw |
-        ConvertFrom-Json
-    $output = $metadata.elements[0]
-    $source = Join-Path $PSScriptRoot "app/build/outputs/apk/release/$($output.outputFile)"
-    $artifactDir = Join-Path $PSScriptRoot '../artifacts/android'
-    New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
-    $fileName = "suiyi-$($output.versionName)-android.apk"
-    $apk = Join-Path $artifactDir $fileName
     $securePassword = ConvertTo-SecureString (Get-Content -LiteralPath $secret -Raw).Trim()
     $credential = [pscredential]::new('suiyi-android', $securePassword)
     $env:SUIYI_LOCAL_ANDROID_PASSWORD = $credential.GetNetworkCredential().Password
-    & $signer sign --ks $keystore --ks-key-alias suiyi-android `
-        --ks-pass 'env:SUIYI_LOCAL_ANDROID_PASSWORD' --out $apk $source
-    if ($LASTEXITCODE) { throw "apksigner failed ($LASTEXITCODE)." }
-    & $signer verify --verbose --print-certs $apk
-    if ($LASTEXITCODE) { throw "APK signature verification failed ($LASTEXITCODE)." }
-    $hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
-    Set-Content -LiteralPath "$apk.sha256" -Encoding ascii -Value "$hash  $fileName"
-    Write-Output (Get-Item -LiteralPath $apk).FullName
+    & (Join-Path $PSScriptRoot 'sign-apk.ps1') -Keystore $keystore -StorePasswordEnv SUIYI_LOCAL_ANDROID_PASSWORD
 } finally {
     Remove-Item Env:SUIYI_LOCAL_ANDROID_PASSWORD -ErrorAction SilentlyContinue
 }
