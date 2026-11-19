@@ -2,6 +2,8 @@
 
 **简体中文** · [English](README.en.md)
 
+[Android 版使用说明](android/README.md)
+
 <img src="src/TranslationFloat.App/Assets/Suiyi.png" alt="随译图标" width="56" height="56">
 
 **选中一句，译文就位。**

@@ -2,6 +2,8 @@
 
 [简体中文](README.md) · **English**
 
+[Android guide](android/README.md)
+
 <img src="src/TranslationFloat.App/Assets/Suiyi.png" alt="Suiyi icon" width="56" height="56">
 
 **Select a sentence. Translate in place.**

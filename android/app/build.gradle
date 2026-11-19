@@ -1,0 +1,20 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'top.mossmoss.suiyi'
+    compileSdk 36
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId 'top.mossmoss.suiyi'
+        minSdk 23
+        targetSdk 36
+        versionCode 4
+        versionName '1.0.2'
+    }
+}
