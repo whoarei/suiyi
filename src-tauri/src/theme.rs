@@ -1,6 +1,6 @@
 use crate::store::Store;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, sync::OnceLock};
 use tauri::{Emitter, Manager};
 pub const PALETTES: [(&str, &str, &str); 10] = [
     ("Blue", "蓝色", "#2E68ED"),
@@ -102,37 +102,43 @@ pub fn colors(id: &str, dark: bool) -> BTreeMap<String, String> {
     .collect()
 }
 pub fn icon(id: &str, dark: bool, size: u32) -> image::RgbaImage {
+    use image::imageops::{FilterType, resize};
+
+    static DEFAULT: OnceLock<image::RgbaImage> = OnceLock::new();
+    static MASK: OnceLock<image::RgbaImage> = OnceLock::new();
+    let decode = |bytes| {
+        image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+            .expect("generated Suiyi icon must be a valid PNG")
+            .into_rgba8()
+    };
+    if id == "Orange" {
+        let brand = DEFAULT.get_or_init(|| {
+            decode(include_bytes!(
+                "../../src/TranslationFloat.App/Assets/Suiyi.png"
+            ))
+        });
+        return resize(brand, size, size, FilterType::Triangle);
+    }
+
+    let mask = MASK.get_or_init(|| {
+        decode(include_bytes!(
+            "../../src/TranslationFloat.App/Assets/Suiyi.Mask.png"
+        ))
+    });
     let c = colors(id, dark);
     let bg = rgb(&c["accent"]);
     let fg = rgb(&c["on-accent"]);
-    image::RgbaImage::from_fn(size, size, |px, py| {
-        let mut sums = [0u32; 4];
-        for sy in 0..4 {
-            for sx in 0..4 {
-                let x = (px as f64 + (sx as f64 + 0.5) / 4.) * 16. / size as f64;
-                let y = (py as f64 + (sy as f64 + 0.5) / 4.) * 16. / size as f64;
-                let dx = (x - 8.).abs() - 4.;
-                let dy = (y - 8.).abs() - 4.;
-                let inside = dx.max(0.).powi(2) + dy.max(0.).powi(2) <= 16.;
-                if inside {
-                    let rect = |l: f64, t: f64, r: f64, b: f64| x >= l && x < r && y >= t && y < b;
-                    let glyph = rect(10.5, 3., 13., 4.5)
-                        || rect(11., 4.5, 12.5, 11.5)
-                        || rect(10.5, 11.5, 13., 13.)
-                        || rect(3.5, 4., 8., 5.5)
-                        || rect(3.5, 10.5, 7.5, 12.)
-                        || rect(3.5, 7.2, 7., 8.8)
-                        || ((7. ..=9.5).contains(&x) && (y - 8.).abs() <= 2.1 * (9.5 - x) / 2.5);
-                    let color = if glyph { fg } else { bg };
-                    for i in 0..3 {
-                        sums[i] += color[i] as u32
-                    }
-                    sums[3] += 255
-                }
-            }
+    let mut icon = resize(mask, size, size, FilterType::Triangle);
+    for pixel in icon.pixels_mut() {
+        let coverage = u16::from(pixel[0]);
+        for channel in 0..3 {
+            pixel[channel] = ((u16::from(bg[channel]) * (255 - coverage)
+                + u16::from(fg[channel]) * coverage
+                + 127)
+                / 255) as u8;
         }
-        image::Rgba(sums.map(|s| (s / 16) as u8))
-    })
+    }
+    icon
 }
 pub fn refresh(app: &tauri::AppHandle, store: &Store, id: &str) -> Result<(), String> {
     let dark = dark();
@@ -201,5 +207,24 @@ mod tests {
     #[test]
     fn black_in_dark_is_visible() {
         assert_eq!(colors("Black", true)["accent"], "#E5E9EF")
+    }
+    #[test]
+    fn icons_share_the_android_mark_across_palettes() {
+        let default = icon("Orange", false, 48);
+        let blue = icon("Blue", false, 48);
+        assert_eq!(default.get_pixel(24, 5).0, [0xAC, 0x49, 0x09, 255]);
+        assert_eq!(default.get_pixel(20, 13).0, [255; 4]);
+        assert_eq!(blue.get_pixel(24, 5).0, [0x2E, 0x68, 0xED, 255]);
+        assert_eq!(
+            &blue.get_pixel(20, 13).0[..3],
+            &rgb(&colors("Blue", false)["on-accent"])
+        );
+        assert!(
+            default
+                .pixels()
+                .zip(blue.pixels())
+                .all(|(a, b)| a[3] == b[3])
+        );
+        assert_eq!(default.get_pixel(0, 0)[3], 0);
     }
 }

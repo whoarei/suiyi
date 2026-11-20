@@ -20,6 +20,5 @@
     <Resource Include="Assets\Suiyi.ico" />
     <EmbeddedResource Include="Assets\Suiyi.Tray.ico" LogicalName="TranslationFloat.Assets.Suiyi.Tray.ico" />
     <EmbeddedResource Include="Assets\Suiyi.svg" LogicalName="TranslationFloat.Assets.Suiyi.svg" />
-    <EmbeddedResource Include="Assets\Suiyi.Tray.svg" LogicalName="TranslationFloat.Assets.Suiyi.Tray.svg" />
   </ItemGroup>
 </Project>

@@ -128,4 +128,4 @@ Release 包含 `suiyi-X.Y.Z-windows-x64-setup.exe`、`suiyi-X.Y.Z-windows-x64-po
 
 UI Automation 辅助进程默认仅查询控件类型、启用/只读/密码状态和运行时身份。按下快捷键时读取支持的选区，替换前只复核可编辑选区。读取范围限于选中的文字，每次查询最多等待 900 毫秒。原生 Edit/RichEdit 先确认非空选区，再执行一次 Ctrl+C，只读取本次由目标进程新写入的 Unicode 文本；不会拿旧剪贴板内容翻译，也不恢复旧剪贴板。此兼容路径可能将原选中文字留在剪贴板，成功回填后留下译文。
 
-程序默认使用橙色「译入光标」图标，以文字、箭头和输入光标表达译文回填。运行时窗口、任务栏和托盘按主题生成并同步图标，图标缓存位于 `%LOCALAPPDATA%\TranslationFloat\Icons`。程序只刷新指向当前随译程序的快捷方式；[矢量源稿、尺寸预览与生成方法](assets/README.md)随源码保留。
+桌面默认使用与 Android 一致的橙底白字「文 / A」图标。运行时窗口、任务栏和托盘按主题生成并同步图标，图标缓存位于 `%LOCALAPPDATA%\TranslationFloat\Icons`。程序只刷新指向当前随译程序的快捷方式。[矢量源稿、尺寸预览与生成方法](assets/README.md)

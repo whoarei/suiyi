@@ -1,6 +1,6 @@
 [package]
 name = "suiyi"
-version = "0.8.1"
+version = "1.0.4"
 description = "Translate selected text in place"
 edition = "2024"
 rust-version = "1.90"

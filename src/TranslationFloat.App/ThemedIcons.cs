@@ -35,7 +35,6 @@ internal sealed class ThemeIconFactory
     internal static readonly int[] WindowSizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256];
     internal static readonly int[] TraySizes = [16, 20, 24, 32, 40, 48, 64];
     private readonly XDocument _app = Load("TranslationFloat.Assets.Suiyi.svg");
-    private readonly XDocument _tray = Load("TranslationFloat.Assets.Suiyi.Tray.svg");
     private readonly Dictionary<(Color, Color), (byte[] Window, byte[] Tray)> _cache = new();
 
     public ThemedIcons Create(ThemeAppearance appearance)
@@ -43,7 +42,7 @@ internal sealed class ThemeIconFactory
         var key = (appearance["Accent"], appearance["OnAccent"]);
         if (!_cache.TryGetValue(key, out var bytes))
         {
-            bytes = (Encode(WindowSizes, appearance, false), Encode(TraySizes, appearance, true));
+            bytes = (Encode(WindowSizes, appearance), Encode(TraySizes, appearance));
             _cache.Add(key, bytes);
         }
         return new(bytes.Window, bytes.Tray);
@@ -56,12 +55,12 @@ internal sealed class ThemeIconFactory
         return XDocument.Load(stream);
     }
 
-    private byte[] Encode(int[] sizes, ThemeAppearance appearance, bool tray)
+    private byte[] Encode(int[] sizes, ThemeAppearance appearance)
     {
         var frames = new List<byte[]>();
         foreach (var size in sizes)
         {
-            var bitmap = Render(size <= 48 || tray ? _tray : _app, size, appearance);
+            var bitmap = Render(_app, size, appearance);
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var png = new MemoryStream(); encoder.Save(png); frames.Add(png.ToArray());
         }
@@ -88,26 +87,18 @@ internal sealed class ThemeIconFactory
         {
             draw.PushTransform(new ScaleTransform(size / units, size / units));
             var foreground = new SolidColorBrush(appearance["OnAccent"]);
+            var background = new SolidColorBrush(appearance["Accent"]);
             foreach (var node in root.Elements())
             {
                 double Number(string key) => double.Parse(node.Attribute(key)!.Value, CultureInfo.InvariantCulture);
                 switch (node.Name.LocalName)
                 {
-                    case "title": case "defs": break;
+                    case "title": break;
                     case "rect":
-                        Brush background = new SolidColorBrush(appearance["Accent"]);
-                        if (units > 16)
-                        {
-                            var color = appearance["Accent"];
-                            var brighter = Color.FromRgb((byte)(color.R + (255 - color.R) * .18),
-                                (byte)(color.G + (255 - color.G) * .18), (byte)(color.B + (255 - color.B) * .18));
-                            background = new LinearGradientBrush(brighter, color, 45);
-                        }
-                        var edge = new SolidColorBrush(appearance["OnAccent"]) { Opacity = .30 };
-                        draw.DrawRoundedRectangle(background, new Pen(edge, units / size * .55),
+                        draw.DrawRoundedRectangle(background, null,
                             new Rect(Number("x"), Number("y"), Number("width"), Number("height")), Number("rx"), Number("rx"));
                         break;
-                    case "path": draw.DrawGeometry(foreground, null, Geometry.Parse(node.Attribute("d")!.Value)); break;
+                    case "path": draw.DrawGeometry(foreground, null, Geometry.Parse("F1 " + node.Attribute("d")!.Value)); break;
                     default: throw new InvalidOperationException("Unsupported icon shape");
                 }
             }

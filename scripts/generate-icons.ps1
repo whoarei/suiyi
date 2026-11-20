@@ -7,14 +7,42 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $assetPath = Join-Path $projectRoot 'src\TranslationFloat.App\Assets'
 $previewPath = Join-Path $projectRoot 'docs\assets'
 New-Item -ItemType Directory -Path $previewPath -Force | Out-Null
-[xml]$appSvg = Get-Content -LiteralPath (Join-Path $assetPath 'Suiyi.svg') -Raw
-[xml]$traySvg = Get-Content -LiteralPath (Join-Path $assetPath 'Suiyi.Tray.svg') -Raw
+
+# The Android launcher vector supplies the desktop glyph and default colors.
+[xml]$androidIcon = Get-Content -LiteralPath (Join-Path $projectRoot 'android/app/src/main/res/drawable/ic_suiyi.xml') -Raw
+$androidNamespace = 'http://schemas.android.com/apk/res/android'
+$vector = $androidIcon.DocumentElement
+$viewport = $vector.GetAttribute('viewportWidth', $androidNamespace)
+$paths = $vector.SelectNodes('path')
+if ($viewport -notmatch '^[1-9][0-9]*$' -or $viewport -ne $vector.GetAttribute('viewportHeight', $androidNamespace) -or $paths.Count -ne 2) {
+    throw 'Expected a square Android icon with a background and one foreground path.'
+}
+$background = $paths[0].GetAttribute('fillColor', $androidNamespace)
+$foreground = $paths[1].GetAttribute('fillColor', $androidNamespace)
+if ($foreground -eq '@android:color/white') { $foreground = '#FFFFFF' }
+if ($background -notmatch '^#[0-9a-f]{6}$' -or $foreground -notmatch '^#[0-9a-f]{6}$') {
+    throw 'Expected opaque Android icon colors.'
+}
+$glyph = $paths[1].GetAttribute('pathData', $androidNamespace)
+$radius = ([Math]::Round([int]$viewport * 0.21)).ToString([Globalization.CultureInfo]::InvariantCulture)
+$svg = @"
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 $viewport $viewport">
+  <title>Suiyi translation icon</title>
+  <rect x="0" y="0" width="$viewport" height="$viewport" rx="$radius" fill="$background"/>
+  <path fill="$foreground" d="$glyph"/>
+</svg>
+"@
+[IO.File]::WriteAllText((Join-Path $assetPath 'Suiyi.svg'), ($svg -replace '\r\n', "`n") + "`n")
+[xml]$appSvg = $svg
+[xml]$maskSvg = $svg
+$maskSvg.DocumentElement.rect.SetAttribute('fill', '#000000')
+$maskSvg.DocumentElement.path.SetAttribute('fill', '#FFFFFF')
 
 function New-Brush([string]$color) {
     return [Windows.Media.BrushConverter]::new().ConvertFromInvariantString($color)
 }
 
-# The source icons deliberately use only filled paths, rounded rectangles and one gradient.
+# The desktop SVG uses a rounded background and the Android path.
 function Render-Icon([xml]$svg, [int]$size) {
     $viewBox = $svg.DocumentElement.GetAttribute('viewBox').Split(' ')
     $scale = $size / [double]$viewBox[2]
@@ -22,23 +50,14 @@ function Render-Icon([xml]$svg, [int]$size) {
     $drawing = $visual.RenderOpen()
     $drawing.PushTransform([Windows.Media.ScaleTransform]::new($scale, $scale))
     foreach ($node in $svg.DocumentElement.ChildNodes) {
-        if ($node.LocalName -in @('title', 'defs')) { continue }
-        $fill = $node.GetAttribute('fill')
-        if ($fill -eq 'url(#accent)') {
-            $brush = [Windows.Media.LinearGradientBrush]::new()
-            $brush.StartPoint = [Windows.Point]::new(0, 0)
-            $brush.EndPoint = [Windows.Point]::new(1, 1)
-            foreach ($stop in $svg.GetElementsByTagName('stop')) {
-                $color = [Windows.Media.ColorConverter]::ConvertFromString($stop.GetAttribute('stop-color'))
-                $brush.GradientStops.Add([Windows.Media.GradientStop]::new($color, [double]$stop.GetAttribute('offset')))
-            }
-        } else { $brush = New-Brush $fill }
+        if ($node.LocalName -eq 'title') { continue }
+        $brush = New-Brush ($node.GetAttribute('fill'))
         switch ($node.LocalName) {
             'rect' {
                 $rect = [Windows.Rect]::new([double]$node.x, [double]$node.y, [double]$node.width, [double]$node.height)
                 $drawing.DrawRoundedRectangle($brush, $null, $rect, [double]$node.rx, [double]$node.rx)
             }
-            'path' { $drawing.DrawGeometry($brush, $null, [Windows.Media.Geometry]::Parse($node.d)) }
+            'path' { $drawing.DrawGeometry($brush, $null, [Windows.Media.Geometry]::Parse('F1 ' + $node.d)) }
             default { throw "Unsupported SVG element: $($node.LocalName)" }
         }
     }
@@ -58,11 +77,10 @@ function Get-PngBytes($bitmap) {
     finally { $stream.Dispose() }
 }
 
-function Write-Ico([string]$path, [int[]]$sizes, [bool]$trayOnly) {
+function Write-Ico([string]$path, [int[]]$sizes) {
     $frames = @()
     foreach ($size in $sizes) {
-        $source = if ($trayOnly -or $size -le 24) { $traySvg } else { $appSvg }
-        $frames += ,(Get-PngBytes (Render-Icon $source $size))
+        $frames += ,(Get-PngBytes (Render-Icon $appSvg $size))
     }
     $stream = [IO.File]::Create($path)
     $writer = [IO.BinaryWriter]::new($stream)
@@ -82,8 +100,9 @@ function Write-Ico([string]$path, [int[]]$sizes, [bool]$trayOnly) {
 }
 
 [IO.File]::WriteAllBytes((Join-Path $assetPath 'Suiyi.png'), (Get-PngBytes (Render-Icon $appSvg 512)))
-Write-Ico (Join-Path $assetPath 'Suiyi.ico') @(16, 20, 24, 32, 40, 48, 64, 96, 128, 256) $false
-Write-Ico (Join-Path $assetPath 'Suiyi.Tray.ico') @(16, 20, 24, 32, 40, 48) $true
+[IO.File]::WriteAllBytes((Join-Path $assetPath 'Suiyi.Mask.png'), (Get-PngBytes (Render-Icon $maskSvg 512)))
+Write-Ico (Join-Path $assetPath 'Suiyi.ico') @(16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+Write-Ico (Join-Path $assetPath 'Suiyi.Tray.ico') @(16, 20, 24, 32, 40, 48)
 
 # Verify all frames with WIC; also check native small-icon selection used by the tray.
 foreach ($name in @('Suiyi.ico', 'Suiyi.Tray.ico')) {
@@ -118,13 +137,13 @@ Draw-Label 'SUIYI' 30 22 18 '#28312E'
 Draw-Label 'SUIYI' 390 22 18 '#EDF0F5'
 foreach ($x in @(28, 388)) {
     $drawing.DrawImage((Render-Icon $appSvg 144), [Windows.Rect]::new($x, 64, 144, 144))
-    $drawing.DrawImage((Render-Icon $traySvg 72), [Windows.Rect]::new(($x + 190), 100, 72, 72))
+    $drawing.DrawImage((Render-Icon $appSvg 72), [Windows.Rect]::new(($x + 190), 100, 72, 72))
     $color = if ($x -eq 28) { '#68746F' } else { '#A5AFBC' }
     Draw-Label 'APP' ($x + 55) 212 10 $color
     Draw-Label 'TRAY' ($x + 214) 180 10 $color
     $position = $x + 12
     foreach ($size in @(16, 20, 24, 32)) {
-        $drawing.DrawImage((Render-Icon $traySvg $size), [Windows.Rect]::new($position, (264 - $size / 2), $size, $size))
+        $drawing.DrawImage((Render-Icon $appSvg $size), [Windows.Rect]::new($position, (264 - $size / 2), $size, $size))
         $position += 66
     }
 }
